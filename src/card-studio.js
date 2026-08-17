@@ -26,7 +26,7 @@ export class CardStudio {
           <div class="card-preview-column">
             <div class="card-preview-stage">
               <article class="bp-player-card" data-theme="overworld" data-foil="prism">
-                <div class="card-grid"></div><div class="card-foil"></div><div class="card-glare"></div>
+                <div class="card-grid"></div><div class="card-spectrum"></div><div class="card-foil"></div><div class="card-sparkles"></div><div class="card-glare"></div>
                 <div class="card-content">
                   <div class="card-kicker"><span>BURHANPOSE // PLAYER</span><span class="card-number">BP-001</span></div>
                   <h3 class="card-player-name">PLAYER</h3>
@@ -37,7 +37,7 @@ export class CardStudio {
                 </div>
               </article>
             </div>
-            <p>Move your pointer across the card to inspect the foil.</p>
+            <p>The center viewport is your card camera. Move across the card to inspect the foil.</p>
           </div>
           <form class="card-controls" onsubmit="return false">
             <label>Player name<input id="cardName" maxlength="16" /></label>
@@ -49,7 +49,7 @@ export class CardStudio {
             </div>
             <label>Artwork scale <output id="cardScaleOutput">100%</output><input id="cardScale" type="range" min="75" max="125" value="100" /></label>
             <label>Foil intensity <output id="cardFoilOutput">72%</output><input id="cardFoilIntensity" type="range" min="0" max="100" value="72" /></label>
-            <button class="card-refresh" type="button">Recapture current pose</button>
+            <button class="card-refresh" type="button">Capture center view</button>
             <button class="card-export" type="button">Export 3000 × 4200 PNG</button>
             <p class="card-studio-status" role="status"></p>
             <p class="card-inspiration">Holographic interaction inspired by <a href="https://github.com/simeydotme/pokemon-cards-css" target="_blank" rel="noopener noreferrer">pokemon-cards-css by simeydotme</a>. Original BurhanPose artwork and implementation.</p>
@@ -72,8 +72,9 @@ export class CardStudio {
     });
     this.root.querySelector(".card-refresh").addEventListener("click", () => this.captureArtwork());
     this.root.querySelector(".card-export").addEventListener("click", () => this.exportCard());
+    this.card.addEventListener("pointerenter", () => this.card.classList.add("interacting"));
     this.card.addEventListener("pointermove", (event) => this.onPointerMove(event));
-    this.card.addEventListener("pointerleave", () => this.setPointer(0.5, 0.5));
+    this.card.addEventListener("pointerleave", () => { this.card.classList.remove("interacting"); this.setPointer(0.5, 0.5); });
   }
 
   async open() {
@@ -94,14 +95,14 @@ export class CardStudio {
   async captureArtwork() {
     const button = this.root.querySelector(".card-refresh");
     button.disabled = true;
-    this.setStatus("Capturing the active avatar…");
+    this.setStatus("Capturing the center viewport camera…");
     try {
-      const blob = await this.editor.captureActiveAvatar(1400);
+      const blob = await this.editor.captureViewportFrame(1560, 1400);
       if (this.artworkUrl) URL.revokeObjectURL(this.artworkUrl);
       this.artworkUrl = URL.createObjectURL(blob);
       this.artwork.src = this.artworkUrl;
       await this.artwork.decode();
-      this.setStatus("Card artwork updated.", "success");
+      this.setStatus("Center view captured.", "success");
     } catch (error) {
       this.setStatus(error.message || "The avatar could not be captured.", "error");
     } finally {
@@ -145,11 +146,22 @@ export class CardStudio {
   }
 
   setPointer(x, y) {
-    this.pointer = { x, y };
-    this.card.style.setProperty("--pointer-x", `${x * 100}%`);
-    this.card.style.setProperty("--pointer-y", `${y * 100}%`);
-    this.card.style.setProperty("--rotate-x", `${(0.5 - y) * 12}deg`);
-    this.card.style.setProperty("--rotate-y", `${(x - 0.5) * 15}deg`);
+    const safeX = Math.min(1, Math.max(0, x));
+    const safeY = Math.min(1, Math.max(0, y));
+    const distance = Math.min(1, Math.hypot(safeX - 0.5, safeY - 0.5) / 0.707);
+    const angle = Math.atan2(safeY - 0.5, safeX - 0.5) * 180 / Math.PI;
+    this.pointer = { x:safeX, y:safeY };
+    this.card.style.setProperty("--pointer-x", `${safeX * 100}%`);
+    this.card.style.setProperty("--pointer-y", `${safeY * 100}%`);
+    this.card.style.setProperty("--pointer-from-left", safeX);
+    this.card.style.setProperty("--pointer-from-top", safeY);
+    this.card.style.setProperty("--pointer-distance", distance);
+    this.card.style.setProperty("--sparkle-opacity", 0.3 + distance * 0.45);
+    this.card.style.setProperty("--pointer-angle", `${angle}deg`);
+    this.card.style.setProperty("--shadow-x", `${(0.5 - safeX) * 26}px`);
+    this.card.style.setProperty("--shadow-y", `${(0.5 - safeY) * 30 + 28}px`);
+    this.card.style.setProperty("--rotate-x", `${(0.5 - safeY) * 18}deg`);
+    this.card.style.setProperty("--rotate-y", `${(safeX - 0.5) * 22}deg`);
   }
 
   async exportCard() {
@@ -227,8 +239,9 @@ function drawArtwork(context, artwork, theme, artworkScale) {
   for (let gx = x; gx <= x + width; gx += 72) { context.beginPath(); context.moveTo(gx, y); context.lineTo(gx, y + height); context.stroke(); }
   for (let gy = y; gy <= y + height; gy += 72) { context.beginPath(); context.moveTo(x, gy); context.lineTo(x + width, gy); context.stroke(); }
   context.globalAlpha = 1;
-  const size = 1080 * artworkScale;
-  context.drawImage(artwork, x + width / 2 - size / 2, y + height / 2 - size / 2 + 34, size, size);
+  const drawWidth = width * artworkScale;
+  const drawHeight = height * artworkScale;
+  context.drawImage(artwork, x + width / 2 - drawWidth / 2, y + height / 2 - drawHeight / 2, drawWidth, drawHeight);
   context.restore();
   context.strokeStyle = theme.accent; context.lineWidth = 8; roundedRect(context, x, y, width, height, 58); context.stroke();
 }
@@ -249,6 +262,22 @@ function drawFoil(context, foil, intensity, pointer) {
       : ["#ff4d7d", "#ffdc5b", "#67ffb1", "#57a7ff", "#c85cff", "#ff4d7d"];
     colors.forEach((color, index) => gradient.addColorStop(index / (colors.length - 1), color));
     context.fillStyle = gradient; context.fillRect(0, 0, 1500, 2100);
+    context.globalAlpha = intensity * 0.24;
+    context.lineWidth = 38;
+    for (let offset = -1900; offset < 2200; offset += 138) {
+      context.strokeStyle = `hsl(${(offset + pointer.x * 360) % 360} 100% 72%)`;
+      context.beginPath(); context.moveTo(offset, 0); context.lineTo(offset + 1320, 2100); context.stroke();
+    }
+  }
+  context.globalCompositeOperation = "screen";
+  context.globalAlpha = intensity * 0.38;
+  let grainSeed = 98173;
+  for (let i = 0; i < 260; i += 1) {
+    grainSeed = (grainSeed * 48271) % 2147483647; const x = grainSeed % 1500;
+    grainSeed = (grainSeed * 48271) % 2147483647; const y = grainSeed % 2100;
+    const radius = 1 + grainSeed % 5;
+    context.fillStyle = i % 4 ? "rgba(255,255,255,.75)" : "rgba(120,255,228,.9)";
+    context.fillRect(x, y, radius, radius);
   }
   const glare = context.createRadialGradient(pointer.x * 1500, pointer.y * 2100, 0, pointer.x * 1500, pointer.y * 2100, 720);
   glare.addColorStop(0, "rgba(255,255,255,.9)"); glare.addColorStop(0.26, "rgba(255,255,255,.16)"); glare.addColorStop(1, "rgba(255,255,255,0)");

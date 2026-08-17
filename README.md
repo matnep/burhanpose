@@ -16,7 +16,7 @@ BurhanPose 1.0.0 is a focused, browser-based Minecraft character posing and rend
 - Avatar height controls and floor placement
 - Dark Geist Mono interface
 - Transparent scene export at 1K, 2K, or 4K
-- Card Studio · 06 with four original themes, interactive holographic foil, and 3000×4200 PNG export
+- Card Studio · 06 with center-viewport camera capture, layered interactive holographic foil, and 3000×4200 PNG export
 
 ## Run locally
 

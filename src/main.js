@@ -175,7 +175,7 @@ document.querySelector("#app").innerHTML = `
 
         <section class="panel-section card-launch-section">
           <div class="section-heading"><span>Card studio</span><span class="step-label">06</span></div>
-          <p class="card-launch-copy">Turn the active pose into an original holographic player card.</p>
+          <p class="card-launch-copy">Use the center viewport as your camera, then turn its composition into a holographic player card.</p>
           <button class="card-launch-button" id="openCardStudioButton">${icon("sparkles")} Create player card</button>
         </section>
       </aside>
