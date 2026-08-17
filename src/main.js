@@ -1,0 +1,392 @@
+import "@fontsource-variable/geist-mono";
+import "./style.css";
+import { BurhanPoseEditor, POSES } from "./pose-editor.js";
+
+const icon = (name) => {
+  const paths = {
+    upload: '<path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M5 14v5h14v-5"/>',
+    download: '<path d="M12 4v12m0 0l4.5-4.5M12 16l-4.5-4.5M5 20h14"/>',
+    undo: '<path d="M9 7H4v-5M4.5 7.5A8 8 0 1 1 6 18"/>',
+    redo: '<path d="M15 7h5v-5m-.5 5.5A8 8 0 1 0 18 18"/>',
+    reset: '<path d="M4 12a8 8 0 1 0 2.3-5.7L4 8.5M4 4v4.5h4.5"/>',
+    camera: '<path d="M4 7h3l1.5-2h7L17 7h3v11H4z"/><circle cx="12" cy="12.5" r="3.5"/>',
+    person: '<circle cx="12" cy="5" r="2.5"/><path d="M8 22l1-7-2-4 3-2h4l3 2-2 4 1 7M9 15h6M7 11l-2 5m12-5 2 5"/>',
+    move: '<path d="M12 2v20M2 12h20M12 2l-3 3m3-3 3 3M12 22l-3-3m3 3 3-3M2 12l3-3m-3 3 3 3m17-3-3-3m3 3-3 3"/>',
+    plus: '<path d="M12 5v14M5 12h14"/>',
+    trash: '<path d="M4 7h16M9 7V4h6v3m3 0-1 14H7L6 7m4 4v6m4-6v6"/>',
+  };
+  return `<svg viewBox="0 0 24 24" aria-hidden="true">${paths[name]}</svg>`;
+};
+
+document.querySelector("#app").innerHTML = `
+  <div class="app-shell">
+    <header class="topbar">
+      <a class="brand" href="#" aria-label="BurhanPose home">
+        <img class="brand-logo" src="/burhan-logo.png" alt="" />
+        <span>burhan<span>pose</span></span>
+      </a>
+      <div class="document-name">
+        <span class="status-dot"></span>
+        <span id="documentName">Untitled pose</span>
+        <small>Saved locally</small>
+      </div>
+      <div class="top-actions">
+        <button class="icon-button" id="undoButton" title="Undo (Ctrl+Z)">${icon("undo")}</button>
+        <button class="icon-button" id="redoButton" title="Redo (Ctrl+Shift+Z)">${icon("redo")}</button>
+        <span class="top-divider"></span>
+        <button class="secondary-button" id="frameButton">${icon("camera")} Frame</button>
+        <button class="primary-button" id="exportButton">${icon("download")} Export transparent PNG</button>
+      </div>
+    </header>
+
+    <main class="workspace">
+      <aside class="panel left-panel">
+        <section class="panel-section import-section">
+          <div class="section-heading"><span>Character</span><span class="step-label">01</span></div>
+          <div class="avatar-list" id="avatarList"></div>
+          <button class="add-avatar-button" id="addAvatarButton">${icon("plus")} Add avatar</button>
+          <form class="username-form" id="usernameForm">
+            <label for="usernameInput">Minecraft username</label>
+            <div class="input-row">
+              <input id="usernameInput" maxlength="16" autocomplete="off" placeholder="e.g. Matnepp" />
+              <button type="submit" id="fetchButton">Fetch</button>
+            </div>
+          </form>
+          <div class="or-divider"><span>or</span></div>
+          <label class="upload-button" for="skinFile">${icon("upload")} Upload skin PNG</label>
+          <input id="skinFile" type="file" accept="image/png" hidden />
+          <div class="toggle-row"><span><strong>Outer layer</strong><small>Hat, jacket & sleeves</small></span><label class="switch"><input id="outerLayerToggle" type="checkbox" checked><i></i></label></div>
+          <p class="inline-message" id="importMessage" role="status"></p>
+        </section>
+
+        <section class="panel-section poses-section">
+          <div class="section-heading"><span>Pose presets</span><span class="step-label">02</span></div>
+          <div class="pose-grid" id="poseGrid">
+            ${Object.entries(POSES).map(([key, pose], index) => `<button data-pose="${key}" class="${index === 0 ? "active" : ""}"><span class="pose-figure pose-${key}">${icon("person")}</span><span>${pose.label}</span></button>`).join("")}
+          </div>
+        </section>
+      </aside>
+
+      <section class="viewport-shell">
+        <div class="viewport-toolbar">
+          <div class="tool-group">
+            <button class="tool active" id="selectTool" title="Pose body parts">${icon("person")}</button>
+            <button class="tool" id="moveTool" title="Drag avatars to place them">${icon("move")}</button>
+            <span></span>
+            <button class="tool" id="resetPoseButton" title="Reset pose">${icon("reset")}</button>
+          </div>
+        </div>
+        <div id="viewport" class="viewport" aria-label="3D character posing viewport"></div>
+        <div class="viewport-hint"><kbd>Drag</kbd> orbit <i></i><kbd>Scroll</kbd> zoom <i></i><kbd>Click</kbd> select limb</div>
+        <div class="loading-overlay" id="loadingOverlay"><span></span><p>Preparing character</p></div>
+      </section>
+
+      <aside class="panel right-panel">
+        <section class="panel-section inspector-section">
+          <div class="section-heading"><span>Transform</span><span class="selected-chip" id="selectedChip">Head</span></div>
+          <div class="transform-targets">
+            <button class="active" id="partTargetButton">Selected part</button>
+            <button id="avatarTargetButton">Whole avatar</button>
+          </div>
+          <div class="height-control">
+            <div class="property-title"><span>Avatar height</span><button id="groundAvatarButton">Place on floor</button></div>
+            <div class="height-inputs">
+              <label for="avatarHeight">Y</label>
+              <input id="avatarHeight" type="range" min="-4" max="4" value="0" step="0.01">
+              <div class="number-wrap"><input id="avatarHeightNumber" type="number" min="-4" max="4" value="0" step="0.01"><span>u</span></div>
+            </div>
+          </div>
+          <div class="selected-part">
+            <span class="part-cube"><img id="partPreview" alt="Selected avatar skin" /></span>
+            <div><strong id="selectedPartName">Head</strong><small>Rotation pivot</small></div>
+            <button class="mini-reset" id="resetPartButton" title="Reset selected part">${icon("reset")}</button>
+          </div>
+          <div class="rotation-control">
+            <div class="property-title"><span>Rotation</span><small>degrees</small></div>
+            ${["x", "y", "z"].map((axis) => `
+              <div class="axis-row axis-${axis}">
+                <label for="rotation-${axis}">${axis.toUpperCase()}</label>
+                <input id="rotation-${axis}" type="range" min="-180" max="180" value="0" step="1">
+                <div class="number-wrap"><input id="rotation-${axis}-number" type="number" min="-180" max="180" value="0"><span>°</span></div>
+              </div>`).join("")}
+          </div>
+          <div class="inspector-actions">
+            <button id="mirrorButton"><span class="mirror-icon">↔</span> Mirror pose</button>
+            <button id="resetAllButton">${icon("reset")} Reset all</button>
+          </div>
+        </section>
+
+        <section class="panel-section scene-section">
+          <div class="section-heading"><span>Scene</span><span class="step-label">04</span></div>
+          <div class="color-setting">
+            <div><strong>Background</strong><small>Canvas color</small></div>
+            <div class="color-input-wrap"><input id="backgroundColor" type="color" value="#111512"><span>#111512</span></div>
+          </div>
+          <div class="slider-setting"><div><strong>Light direction</strong><output id="lightOutput">35°</output></div><input id="lightDirection" type="range" min="-180" max="180" value="35"></div>
+        </section>
+
+        <section class="panel-section camera-section">
+          <div class="section-heading"><span>Camera</span><span class="step-label">05</span></div>
+          <div class="camera-presets">
+            <button data-camera="front">Front</button><button data-camera="three-quarter" class="active">3/4</button><button data-camera="profile">Profile</button><button data-camera="isometric">Isometric</button>
+          </div>
+          <div class="slider-setting"><div><strong>Field of view</strong><output id="fovOutput">35°</output></div><input id="fovSlider" type="range" min="20" max="70" value="35"></div>
+        </section>
+      </aside>
+    </main>
+    <footer class="statusbar"><span><i class="ready-dot"></i> WebGL ready</span><span id="renderStats">—</span><span>BurhanPose MVP · Local first</span></footer>
+  </div>
+`;
+
+const $ = (selector) => document.querySelector(selector);
+const rotationInputs = ["x", "y", "z"].map((axis) => ({
+  axis,
+  range: $(`#rotation-${axis}`),
+  number: $(`#rotation-${axis}-number`),
+}));
+let updatingInputs = false;
+const DEFAULT_AVATAR_NAMES = ["Matnepp", "MoonWiRaja", "AshotSenpai", "Amadszz", "iquzo"];
+const defaultAvatarName = DEFAULT_AVATAR_NAMES[Math.floor(Math.random() * DEFAULT_AVATAR_NAMES.length)];
+
+let editor;
+editor = new BurhanPoseEditor($("#viewport"), {
+  onSelectionChange(part, rotation) {
+    $("#selectedPartName").textContent = part.label;
+    $("#selectedChip").textContent = part.label;
+    $("#partTargetButton").classList.toggle("active", !part.isAvatar);
+    $("#avatarTargetButton").classList.toggle("active", Boolean(part.isAvatar));
+    updateRotationInputs(rotation);
+  },
+  onRotationChange(rotation) {
+    updateRotationInputs(rotation);
+    activatePoseButton();
+  },
+  onAvatarHeightChange(height) {
+    const value = Number(height.toFixed(2));
+    $("#avatarHeight").value = value;
+    $("#avatarHeightNumber").value = value;
+  },
+  onStats(stats) {
+    $("#renderStats").textContent = `${stats.drawCalls} draws · ${stats.triangles} tris`;
+  },
+  onAvatarsChange(avatars) {
+    renderAvatarList(avatars);
+    const active = avatars.find((avatar) => avatar.active);
+    if (active) {
+      $("#partPreview").src = active.preview;
+      $("#documentName").textContent = `${active.name}'s pose`;
+    }
+  },
+  onExportComplete({ transparent }) {
+    const button = $("#exportButton");
+    button.dataset.alphaVerified = String(transparent);
+    button.innerHTML = `${icon("download")} ${transparent ? "Transparent PNG saved" : "PNG saved"}`;
+    setTimeout(() => { button.innerHTML = `${icon("download")} Export transparent PNG`; }, 1800);
+  },
+}, { name:defaultAvatarName, source:"Loading Minecraft profile…" });
+
+function renderAvatarList(avatars) {
+  $("#avatarList").innerHTML = avatars.map((avatar) => `
+    <div class="skin-card ${avatar.active ? "active" : ""}" data-avatar-id="${avatar.id}">
+      <button class="avatar-select" aria-label="Select ${avatar.name}">
+        <span class="skin-avatar"><img alt="${avatar.name} skin face" src="${avatar.preview}" /></span>
+        <span class="skin-meta"><strong>${avatar.name}</strong><small>${avatar.source}</small></span>
+      </button>
+      <button class="avatar-delete" data-delete-avatar="${avatar.id}" aria-label="Delete ${avatar.name}" title="Delete avatar" ${avatars.length === 1 ? "disabled" : ""}>${icon("trash")}</button>
+    </div>`).join("");
+}
+function updateRotationInputs(rotation) {
+  updatingInputs = true;
+  rotationInputs.forEach(({ axis, range, number }) => {
+    const value = Math.round(rotation[axis]);
+    range.value = value;
+    number.value = value;
+  });
+  updatingInputs = false;
+}
+
+rotationInputs.forEach(({ axis, range, number }) => {
+  const change = (event) => {
+    if (updatingInputs) return;
+    const value = Number(event.target.value);
+    range.value = value;
+    number.value = value;
+    editor.setSelectedRotation(axis, value);
+  };
+  range.addEventListener("input", change);
+  range.addEventListener("change", () => editor.commitHistory());
+  number.addEventListener("change", change);
+  number.addEventListener("change", () => editor.commitHistory());
+});
+
+const updateAvatarHeight = (event) => {
+  const value = Number(event.target.value);
+  $("#avatarHeight").value = value;
+  $("#avatarHeightNumber").value = value;
+  editor.setAvatarHeight(value);
+};
+$("#avatarHeight").addEventListener("input", updateAvatarHeight);
+$("#avatarHeight").addEventListener("change", () => editor.commitHistory());
+$("#avatarHeightNumber").addEventListener("change", updateAvatarHeight);
+$("#avatarHeightNumber").addEventListener("change", () => editor.commitHistory());
+$("#groundAvatarButton").addEventListener("click", () => editor.placeOnGround());
+
+$("#skinFile").addEventListener("change", async (event) => {
+  const file = event.target.files?.[0];
+  if (!file) return;
+  setMessage("Loading uploaded skin…", "loading");
+  try {
+    const result = await editor.loadSkinFile(file);
+    setSkinIdentity(file.name.replace(/\.png$/i, ""), `Uploaded · ${result.model}`);
+    setMessage(`Detected ${result.model} model.`, "success");
+  } catch (error) {
+    setMessage(error.message, "error");
+  }
+  event.target.value = "";
+});
+
+$("#usernameForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const username = $("#usernameInput").value.trim();
+  if (!username) return setMessage("Enter a Minecraft Java username.", "error");
+  const button = $("#fetchButton");
+  button.disabled = true;
+  button.textContent = "…";
+  setMessage(`Fetching ${username}…`, "loading");
+  try {
+    const result = await editor.loadSkinUsername(username);
+    setSkinIdentity(result.name, `Minecraft profile · ${result.model}`);
+    setMessage(`Loaded ${result.name} as ${result.model}.`, "success");
+  } catch (error) {
+    setMessage(error.message, "error");
+  } finally {
+    button.disabled = false;
+    button.textContent = "Fetch";
+  }
+});
+
+function setSkinIdentity(name, source) {
+  editor.setAvatarIdentity(name, source);
+}
+
+function setMessage(message, type = "") {
+  const element = $("#importMessage");
+  element.textContent = message;
+  element.className = `inline-message ${type}`;
+}
+
+function profileCandidates(preferred) {
+  const remaining = DEFAULT_AVATAR_NAMES.filter((name) => name !== preferred).sort(() => Math.random() - 0.5);
+  return [preferred, ...remaining];
+}
+
+async function loadApprovedSkin(preferred) {
+  for (const username of profileCandidates(preferred)) {
+    editor.setAvatarIdentity(username, "Loading Minecraft profile…");
+    try {
+      const result = await editor.loadSkinUsername(username);
+      setSkinIdentity(result.name, `Minecraft profile · ${result.model}`);
+      $("#usernameInput").placeholder = `e.g. ${username}`;
+      return true;
+    } catch {
+      // Try another approved default when a profile service is temporarily unavailable.
+    }
+  }
+  editor.setAvatarIdentity(preferred, "Profile temporarily unavailable");
+  return false;
+}
+
+async function loadDefaultAvatar() {
+  const loaded = await loadApprovedSkin(defaultAvatarName);
+  setMessage(loaded ? "" : "Default skin could not be fetched. You can retry or upload a PNG.", loaded ? "" : "error");
+}
+
+function activatePoseButton(name) {
+  document.querySelectorAll("[data-pose]").forEach((button) => button.classList.toggle("active", button.dataset.pose === name));
+}
+
+$("#avatarList").addEventListener("click", (event) => {
+  const deleteButton = event.target.closest("[data-delete-avatar]");
+  if (deleteButton) {
+    if (editor.removeAvatar(deleteButton.dataset.deleteAvatar)) setMessage("Avatar removed.", "success");
+    return;
+  }
+  const card = event.target.closest("[data-avatar-id]");
+  if (card) editor.activateAvatar(card.dataset.avatarId);
+});
+
+$("#addAvatarButton").addEventListener("click", async () => {
+  const button = $("#addAvatarButton");
+  const username = DEFAULT_AVATAR_NAMES[Math.floor(Math.random() * DEFAULT_AVATAR_NAMES.length)];
+  button.disabled = true;
+  editor.addAvatar({ name:username, source:"Loading Minecraft profile…", visible:false });
+  setMessage(`Loading ${username}…`, "loading");
+  const loaded = await loadApprovedSkin(username);
+  setMessage(loaded ? "Avatar added. Choose Move, then drag it into place." : "Avatar profile could not be fetched.", loaded ? "success" : "error");
+  button.disabled = false;
+});
+
+function setTool(mode) {
+  editor.setInteractionMode(mode);
+  $("#selectTool").classList.toggle("active", mode === "pose");
+  $("#moveTool").classList.toggle("active", mode === "move");
+  document.querySelector(".viewport-hint").innerHTML = mode === "move"
+    ? "<kbd>Drag avatar</kbd> place <i></i><kbd>Scroll</kbd> zoom"
+    : "<kbd>Drag</kbd> orbit <i></i><kbd>Scroll</kbd> zoom <i></i><kbd>Click</kbd> select limb";
+}
+
+$("#selectTool").addEventListener("click", () => setTool("pose"));
+$("#moveTool").addEventListener("click", () => setTool("move"));
+$("#partTargetButton").addEventListener("click", () => editor.selectPart(editor.lastPartKey || "head"));
+$("#avatarTargetButton").addEventListener("click", () => editor.selectPart("avatar"));
+
+$("#poseGrid").addEventListener("click", (event) => {
+  const button = event.target.closest("[data-pose]");
+  if (!button) return;
+  editor.applyPose(button.dataset.pose);
+  activatePoseButton(button.dataset.pose);
+});
+
+$("#outerLayerToggle").addEventListener("change", (event) => editor.setOuterLayer(event.target.checked));
+$("#backgroundColor").addEventListener("input", (event) => {
+  editor.setBackground(event.target.value);
+  event.target.nextElementSibling.textContent = event.target.value.toUpperCase();
+});
+$("#lightDirection").addEventListener("input", (event) => {
+  editor.setLightDirection(Number(event.target.value));
+  $("#lightOutput").textContent = `${event.target.value}°`;
+});
+$("#fovSlider").addEventListener("input", (event) => {
+  editor.setFov(Number(event.target.value));
+  $("#fovOutput").textContent = `${event.target.value}°`;
+});
+document.querySelector(".camera-presets").addEventListener("click", (event) => {
+  const button = event.target.closest("[data-camera]");
+  if (!button) return;
+  editor.setCameraPreset(button.dataset.camera);
+  document.querySelectorAll("[data-camera]").forEach((item) => item.classList.toggle("active", item === button));
+  $("#fovSlider").disabled = button.dataset.camera === "isometric";
+});
+
+$("#frameButton").addEventListener("click", () => editor.frameCharacter());
+$("#resetPoseButton").addEventListener("click", () => { editor.applyPose("idle"); activatePoseButton("idle"); });
+$("#resetAllButton").addEventListener("click", () => { editor.applyPose("idle"); activatePoseButton("idle"); });
+$("#resetPartButton").addEventListener("click", () => editor.resetSelectedPart());
+$("#mirrorButton").addEventListener("click", () => editor.mirrorPose());
+$("#undoButton").addEventListener("click", () => editor.undo());
+$("#redoButton").addEventListener("click", () => editor.redo());
+$("#exportButton").addEventListener("click", () => editor.exportPng());
+
+window.addEventListener("keydown", (event) => {
+  if (!(event.ctrlKey || event.metaKey)) return;
+  if (event.key.toLowerCase() === "z") {
+    event.preventDefault();
+    event.shiftKey ? editor.redo() : editor.undo();
+  }
+});
+
+requestAnimationFrame(() => {
+  $("#loadingOverlay").classList.add("hidden");
+  editor.selectPart("head");
+  loadDefaultAvatar();
+});
