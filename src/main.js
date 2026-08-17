@@ -14,14 +14,39 @@ const icon = (name) => {
     move: '<path d="M12 2v20M2 12h20M12 2l-3 3m3-3 3 3M12 22l-3-3m3 3 3-3M2 12l3-3m-3 3 3 3m17-3-3-3m3 3-3 3"/>',
     plus: '<path d="M12 5v14M5 12h14"/>',
     trash: '<path d="M4 7h16M9 7V4h6v3m3 0-1 14H7L6 7m4 4v6m4-6v6"/>',
+    discord: '<path class="icon-fill" d="M18.9 5.3A16 16 0 0 0 15.7 4l-.4.8a14 14 0 0 0-6.6 0L8.3 4a16 16 0 0 0-3.2 1.3C3 8.4 2.4 11.4 2.7 14.4a13 13 0 0 0 4 2l1-1.4a8 8 0 0 1-1.5-.8l.4-.3c2.9 1.3 7.6 1.3 10.4 0l.5.3c-.5.3-1 .6-1.6.8l1 1.4a13 13 0 0 0 4-2c.4-3.5-.7-6.4-2-9.1ZM8.8 13c-1 0-1.7-.9-1.7-2s.8-2 1.7-2c1 0 1.8.9 1.8 2s-.8 2-1.8 2Zm6.4 0c-1 0-1.8-.9-1.8-2s.8-2 1.8-2 1.7.9 1.7 2-.8 2-1.7 2Z"/>',
   };
   return `<svg viewBox="0 0 24 24" aria-hidden="true">${paths[name]}</svg>`;
+};
+
+const poseIcon = (name) => {
+  const figures = {
+    idle: '<circle cx="16" cy="5" r="2.5"/><path d="M16 8v11m0-7-6 5m6-5 6 5m-6 2-5 10m5-10 5 10"/>',
+    stride: '<circle cx="17" cy="5" r="2.5"/><path d="m16 8-2 10m1-6-7 2m7-2 6 5m-7 1-8 8m8-8 7 10"/>',
+    wave: '<circle cx="15" cy="6" r="2.5"/><path d="m15 9 1 10m0-7-7-7m7 7 6 5m-6 2-5 10m5-10 6 9"/>',
+    hero: '<circle cx="16" cy="5" r="2.5"/><path d="M16 8v11m0-7-7 3 3 5m4-8 7 3-3 5m-4-1-5 10m5-10 5 10"/>',
+    run: '<circle cx="20" cy="6" r="2.5"/><path d="m18 9-5 9m3-6-7-2m7 2 7 5m-10 1-9 5m9-5 8 8"/>',
+    point: '<circle cx="15" cy="5" r="2.5"/><path d="M15 8v11m0-7-6 5m6-5h13m-13 7-5 10m5-10 5 10"/>',
+    jump: '<circle cx="16" cy="7" r="2.5"/><path d="m16 10 0 10m0-7L8 4m8 9 8-9m-8 16-8 7m8-7 8 7"/>',
+    crouch: '<circle cx="19" cy="11" r="2.5"/><path d="m17 14-7 6m4-3-6-3m5 4 7 3m-10-1-5 7h8m7-6 5 6h5"/>',
+    salute: '<circle cx="16" cy="6" r="2.5"/><path d="M16 9v11m0-8-6 5m6-5 5-4 4 1m-9 11-5 9m5-9 5 9"/>',
+    dab: '<circle cx="14" cy="9" r="2.5"/><path d="m16 11 2 9m-1-6-9-5m9 5 10-7m-9 13-7 8m7-8 7 6"/>',
+    cheer: '<circle cx="16" cy="8" r="2.5"/><path d="M16 11v10m0-7L7 4m9 10 9-10m-9 17-6 8m6-8 6 8"/>',
+    tpose: '<circle cx="16" cy="5" r="2.5"/><path d="M16 8v12M3 13h26M16 20l-6 9m6-9 6 9"/>',
+    sit: '<circle cx="14" cy="8" r="2.5"/><path d="m14 11 1 10m0-7-6 5m6-5 6 5m-6 2h9v8m-9-8-6 8"/>',
+    easy: '<circle cx="15" cy="6" r="2.5"/><path d="m15 9 2 11m-1-7-6 5m6-5 5 3m-4 4-4 9m4-9 7 8"/>',
+    sneak: '<circle cx="21" cy="10" r="2.5"/><path d="m19 13-8 5m4-3-7-3m7 3 8 4m-12-1-7 7m7-7 9 8"/>',
+    lie: '<circle cx="27" cy="22" r="2.5"/><path d="M24 22H13m6 0 5-7m-11 7-7-5m7 5-8 5m8-5 8 6"/>',
+    landing: '<circle cx="16" cy="10" r="2.5"/><path d="m16 13 0 8m0-6-9 4m9-4 9 4m-9 2-8 6h8m0-6 8 6h5"/>',
+    groove: '<circle cx="17" cy="6" r="2.5"/><path d="m16 9-2 11m1-7-8 4m8-4 8-5m-9 12-8 6m8-6 8 8"/>',
+  };
+  return `<svg viewBox="0 0 32 34" aria-hidden="true">${figures[name] || figures.idle}</svg>`;
 };
 
 document.querySelector("#app").innerHTML = `
   <div class="app-shell">
     <header class="topbar">
-      <a class="brand" href="#" aria-label="BurhanPose home">
+      <a class="brand" href="#" aria-label="burhanpose home">
         <img class="brand-logo" src="/burhan-logo.png" alt="" />
         <span>burhan<span>pose</span></span>
       </a>
@@ -35,7 +60,14 @@ document.querySelector("#app").innerHTML = `
         <button class="icon-button" id="redoButton" title="Redo (Ctrl+Shift+Z)">${icon("redo")}</button>
         <span class="top-divider"></span>
         <button class="secondary-button" id="frameButton">${icon("camera")} Frame</button>
-        <button class="primary-button" id="exportButton">${icon("download")} Export transparent PNG</button>
+        <div class="export-controls">
+          <select id="exportResolution" aria-label="PNG export resolution" title="PNG export resolution">
+            <option value="1024">1K</option>
+            <option value="2048" selected>2K</option>
+            <option value="4096">4K</option>
+          </select>
+          <button class="primary-button" id="exportButton">${icon("download")} Export PNG</button>
+        </div>
       </div>
     </header>
 
@@ -62,7 +94,7 @@ document.querySelector("#app").innerHTML = `
         <section class="panel-section poses-section">
           <div class="section-heading"><span>Pose presets</span><span class="step-label">02</span></div>
           <div class="pose-grid" id="poseGrid">
-            ${Object.entries(POSES).map(([key, pose], index) => `<button data-pose="${key}" class="${index === 0 ? "active" : ""}"><span class="pose-figure pose-${key}">${icon("person")}</span><span>${pose.label}</span></button>`).join("")}
+            ${Object.entries(POSES).map(([key, pose], index) => `<button data-pose="${key}" class="${index === 0 ? "active" : ""}"><span class="pose-figure pose-${key}">${poseIcon(key)}</span><span>${pose.label}</span></button>`).join("")}
           </div>
         </section>
       </aside>
@@ -134,7 +166,10 @@ document.querySelector("#app").innerHTML = `
         </section>
       </aside>
     </main>
-    <footer class="statusbar"><span><i class="ready-dot"></i> WebGL ready</span><span id="renderStats">—</span><span>BurhanPose MVP · Local first</span></footer>
+    <footer class="statusbar">
+      <span>developed by Matnepp from burhanbistrro&lt;3</span>
+      <a class="discord-link" href="https://discord.burhan.my" target="_blank" rel="noopener noreferrer" aria-label="Join the BurHan Discord" title="Join the BurHan Discord">${icon("discord")}</a>
+    </footer>
   </div>
 `;
 
@@ -166,9 +201,6 @@ editor = new BurhanPoseEditor($("#viewport"), {
     $("#avatarHeight").value = value;
     $("#avatarHeightNumber").value = value;
   },
-  onStats(stats) {
-    $("#renderStats").textContent = `${stats.drawCalls} draws · ${stats.triangles} tris`;
-  },
   onAvatarsChange(avatars) {
     renderAvatarList(avatars);
     const active = avatars.find((avatar) => avatar.active);
@@ -177,11 +209,12 @@ editor = new BurhanPoseEditor($("#viewport"), {
       $("#documentName").textContent = `${active.name}'s pose`;
     }
   },
-  onExportComplete({ transparent }) {
+  onExportComplete({ transparent, resolution }) {
     const button = $("#exportButton");
     button.dataset.alphaVerified = String(transparent);
-    button.innerHTML = `${icon("download")} ${transparent ? "Transparent PNG saved" : "PNG saved"}`;
-    setTimeout(() => { button.innerHTML = `${icon("download")} Export transparent PNG`; }, 1800);
+    button.dataset.exportResolution = String(resolution);
+    button.innerHTML = `${icon("download")} ${transparent ? `${resolution}px PNG saved` : "PNG saved"}`;
+    setTimeout(() => { button.innerHTML = `${icon("download")} Export PNG`; }, 1800);
   },
 }, { name:defaultAvatarName, source:"Loading Minecraft profile…" });
 
@@ -375,7 +408,19 @@ $("#resetPartButton").addEventListener("click", () => editor.resetSelectedPart()
 $("#mirrorButton").addEventListener("click", () => editor.mirrorPose());
 $("#undoButton").addEventListener("click", () => editor.undo());
 $("#redoButton").addEventListener("click", () => editor.redo());
-$("#exportButton").addEventListener("click", () => editor.exportPng());
+$("#exportButton").addEventListener("click", async () => {
+  const button = $("#exportButton");
+  button.disabled = true;
+  button.innerHTML = `${icon("download")} Rendering…`;
+  try {
+    await editor.exportPng(Number($("#exportResolution").value));
+  } catch (error) {
+    setMessage(error.message || "PNG export failed.", "error");
+    button.innerHTML = `${icon("download")} Export PNG`;
+  } finally {
+    button.disabled = false;
+  }
+});
 
 window.addEventListener("keydown", (event) => {
   if (!(event.ctrlKey || event.metaKey)) return;

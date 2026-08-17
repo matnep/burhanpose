@@ -21,7 +21,7 @@ export const POSES = {
   sit: { label: "Sit", parts: { torso: [5, -7, 3], head: [-2, 10, -3], leftArm: [-18, -8, -12], rightArm: [-10, 10, 13], leftLeg: [-92, 0, -4], rightLeg: [-86, 0, 5] } },
   easy: { label: "Easy", parts: { torso: [0, -9, 6], head: [-4, 13, -6], leftArm: [10, -7, -14], rightArm: [-8, 8, 12], leftLeg: [6, 0, -6], rightLeg: [-8, 0, 9] } },
   sneak: { label: "Sneak", parts: { torso: [26, -10, 4], head: [-17, 16, -5], leftArm: [-42, -14, -22], rightArm: [-62, 16, 26], leftLeg: [42, 0, -13], rightLeg: [-35, 0, 15] } },
-  dash: { label: "Dash", parts: { torso: [24, -14, 6], head: [-19, 17, -6], leftArm: [-78, -10, -17], rightArm: [72, 11, 20], leftLeg: [68, 0, -8], rightLeg: [-62, 0, 10] } },
+  lie: { label: "Lie down", avatar: [-90, 0, 0], parts: { torso: [2, -3, 0], head: [-5, 8, -2], leftArm: [18, -5, -24], rightArm: [12, 7, 22], leftLeg: [7, 0, -7], rightLeg: [-5, 0, 8] } },
   landing: { label: "Landing", parts: { torso: [31, 8, -6], head: [-21, -12, 8], leftArm: [-54, -13, -46], rightArm: [-58, 15, 43], leftLeg: [-46, 0, -18], rightLeg: [-62, 0, 21] } },
   groove: { label: "Groove", parts: { torso: [6, -22, 12], head: [7, 28, -11], leftArm: [-64, -26, -42], rightArm: [22, 22, 34], leftLeg: [22, 0, -15], rightLeg: [-19, 0, 17] } },
 };
@@ -66,6 +66,8 @@ export class BurhanPoseEditor {
     this.outerMeshes = [];
     this.history = [];
     this.future = [];
+    this.poseRootOverride = false;
+    this.exporting = false;
     this.background = new THREE.Color("#111512");
     this.raycaster = new THREE.Raycaster();
     this.pointer = new THREE.Vector2();
@@ -248,7 +250,9 @@ export class BurhanPoseEditor {
 
     const armWidth = this.model === "slim" ? 0.375 : 0.5;
     const armX = 0.5 + armWidth / 2 + JOINT_GAP;
-    const shoulderY = this.model === "slim" ? 2.9375 : 3;
+    // Classic sleeves and the jacket otherwise share an exactly coplanar top
+    // edge at y=3, which produces temporal depth flicker while orbiting.
+    const shoulderY = this.model === "slim" ? 2.9375 : 2.99;
     const armPixels = this.model === "slim" ? 3 : 4;
     const leftArmUv = skinBoxUv(32, 48, armPixels, 12, 4);
     const leftArmOuterUv = skinBoxUv(48, 48, armPixels, 12, 4);
@@ -302,9 +306,6 @@ export class BurhanPoseEditor {
       roughness: 0.82,
       metalness: 0,
       side: THREE.FrontSide,
-      polygonOffset: transparent,
-      polygonOffsetFactor: transparent ? -1 : 0,
-      polygonOffsetUnits: transparent ? -1 : 0,
     });
     material.userData.baseEmissive = new THREE.Color(0x000000);
     return new THREE.Mesh(geometry, material);
@@ -419,6 +420,13 @@ export class BurhanPoseEditor {
     const preset = POSES[name] || POSES.idle;
     const pose = {};
     Object.keys(this.parts).forEach((key) => { pose[key] = (preset.parts[key] || [0,0,0]).map((value) => value * DEG); });
+    if (preset.avatar) {
+      pose._avatar = preset.avatar.map((value) => value * DEG);
+      this.poseRootOverride = true;
+    } else if (this.poseRootOverride) {
+      pose._avatar = [0, 0, 0];
+      this.poseRootOverride = false;
+    }
     this.setPose(pose, false);
     this.placeOnGround(false);
     this.commitHistory();
@@ -592,37 +600,55 @@ export class BurhanPoseEditor {
     };
   }
 
-  async exportPng() {
+  async exportPng(requestedResolution = 2048) {
+    if (this.exporting) throw new Error("An export is already in progress.");
+    const maxResolution = Math.min(4096, this.renderer.capabilities.maxTextureSize || 4096);
+    const resolution = THREE.MathUtils.clamp(Math.round(Number(requestedResolution) || 2048), 512, maxResolution);
     const oldPixelRatio = this.renderer.getPixelRatio();
     const oldSize = this.renderer.getSize(new THREE.Vector2());
     const oldBackground = this.scene.background;
-    this.scene.background = null;
-    this.renderer.setClearColor(0x000000, 0);
-    this.renderer.setPixelRatio(1);
-    this.renderer.setSize(1600, 1600, false);
-    if (this.camera.isPerspectiveCamera) {
-      this.camera.aspect = 1;
-      this.camera.updateProjectionMatrix();
-    } else {
-      this.updateOrthographicProjection(1);
+    const oldClearColor = this.renderer.getClearColor(new THREE.Color()).clone();
+    const oldClearAlpha = this.renderer.getClearAlpha();
+    const oldPerspectiveAspect = this.perspectiveCamera.aspect;
+    let result;
+
+    this.exporting = true;
+    try {
+      this.scene.background = null;
+      this.renderer.setClearColor(0x000000, 0);
+      this.renderer.setPixelRatio(1);
+      this.renderer.setSize(resolution, resolution, false);
+      if (this.camera.isPerspectiveCamera) {
+        this.camera.aspect = 1;
+        this.camera.updateProjectionMatrix();
+      } else {
+        this.updateOrthographicProjection(1);
+      }
+      this.renderer.clear(true, true, true);
+      this.renderer.render(this.scene, this.camera);
+
+      const blob = await new Promise((resolve) => this.renderer.domElement.toBlob(resolve, "image/png"));
+      if (!blob) throw new Error("The browser could not encode the PNG export.");
+      const transparent = await verifyTransparentCorners(blob);
+      const link = document.createElement("a");
+      link.download = `burhanpose-${resolution}px-${Date.now()}.png`;
+      link.href = URL.createObjectURL(blob);
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+      result = { transparent, resolution };
+    } finally {
+      this.scene.background = oldBackground;
+      this.renderer.setClearColor(oldClearColor, oldClearAlpha);
+      this.renderer.setPixelRatio(oldPixelRatio);
+      this.renderer.setSize(oldSize.x, oldSize.y, false);
+      this.perspectiveCamera.aspect = oldPerspectiveAspect;
+      this.perspectiveCamera.updateProjectionMatrix();
+      this.updateOrthographicProjection(this.container.clientWidth / Math.max(this.container.clientHeight, 1));
+      this.exporting = false;
+      this.renderer.render(this.scene, this.camera);
     }
-    this.renderer.render(this.scene, this.camera);
-
-    const blob = await new Promise((resolve) => this.renderer.domElement.toBlob(resolve, "image/png"));
-    if (!blob) throw new Error("The browser could not encode the PNG export.");
-    const transparent = await verifyTransparentCorners(blob);
-    const link = document.createElement("a");
-    link.download = `burhanpose-${Date.now()}.png`;
-    link.href = URL.createObjectURL(blob);
-    link.click();
-    setTimeout(() => URL.revokeObjectURL(link.href), 1000);
-
-    this.scene.background = oldBackground;
-    this.renderer.setClearColor(this.background, 1);
-    this.renderer.setPixelRatio(oldPixelRatio);
-    this.renderer.setSize(oldSize.x, oldSize.y, false);
-    this.resize();
-    this.callbacks.onExportComplete?.({ transparent });
+    this.callbacks.onExportComplete?.(result);
+    return result;
   }
 
   resize() {
@@ -656,7 +682,7 @@ export class BurhanPoseEditor {
       if (t >= 1) this.cameraTransition = null;
     }
     this.orbit.update();
-    this.renderer.render(this.scene, this.camera);
+    if (!this.exporting) this.renderer.render(this.scene, this.camera);
     if (!this.lastStats || time - this.lastStats > 1000) {
       this.lastStats = time;
       this.callbacks.onStats?.({ drawCalls:this.renderer.info.render.calls, triangles:this.renderer.info.render.triangles });
