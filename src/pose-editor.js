@@ -4,6 +4,11 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 const DEG = Math.PI / 180;
 const SKIN_SIZE = 64;
 const JOINT_GAP = 0.003;
+const OUTER_LAYER_TOTAL = 0.0625;
+const OUTER_LAYER_SIDE = OUTER_LAYER_TOTAL / 2;
+const JOINT_TRIM = JOINT_GAP / 2;
+const LIMB_OUTER_EXPANSION = OUTER_LAYER_SIDE - JOINT_TRIM;
+const LIMB_OUTER_OFFSET = (OUTER_LAYER_SIDE + JOINT_TRIM) / 2;
 
 export const POSES = {
   idle: { label: "Idle", parts: { torso: [0, -3, 2], head: [-2, 5, -2], leftArm: [4, -2, -5], rightArm: [-3, 2, 4], leftLeg: [2, 0, -2], rightLeg: [-2, 0, 2] } },
@@ -245,23 +250,33 @@ export class BurhanPoseEditor {
     this.character.position.copy(previousPosition);
     this.scene.add(this.character);
 
-    this.makePart("torso", [1, 1.5, 0.5], [0, 3, 0], [0, -0.75, 0], UV.torso, UV.torsoOuter);
-    this.makePart("head", [1, 1, 1], [0, 3 + JOINT_GAP, 0], [0, 0.5, 0], UV.head, UV.headOuter, 0.125);
+    this.makePart("torso", [1, 1.5, 0.5], [0, 3, 0], [0, -0.75, 0], UV.torso, UV.torsoOuter, {
+      expansion: [JOINT_GAP, JOINT_GAP, OUTER_LAYER_TOTAL],
+    });
+    this.makePart("head", [1, 1, 1], [0, 3 + JOINT_GAP, 0], [0, 0.5, 0], UV.head, UV.headOuter, {
+      expansion: [0.125, 0.125, 0.125],
+    });
 
     const armWidth = this.model === "slim" ? 0.375 : 0.5;
     const armX = 0.5 + armWidth / 2 + JOINT_GAP;
-    // Classic sleeves and the jacket otherwise share an exactly coplanar top
-    // edge at y=3, which produces temporal depth flicker while orbiting.
-    const shoulderY = this.model === "slim" ? 2.9375 : 2.99;
+    const shoulderY = this.model === "slim" ? 2.9375 : 3;
     const armPixels = this.model === "slim" ? 3 : 4;
     const leftArmUv = skinBoxUv(32, 48, armPixels, 12, 4);
     const leftArmOuterUv = skinBoxUv(48, 48, armPixels, 12, 4);
     const rightArmUv = skinBoxUv(40, 16, armPixels, 12, 4);
     const rightArmOuterUv = skinBoxUv(40, 32, armPixels, 12, 4);
-    this.makePart("leftArm", [armWidth, 1.5, 0.5], [armX, shoulderY, 0], [0, -0.75, 0], leftArmUv, leftArmOuterUv);
-    this.makePart("rightArm", [armWidth, 1.5, 0.5], [-armX, shoulderY, 0], [0, -0.75, 0], rightArmUv, rightArmOuterUv);
-    this.makePart("leftLeg", [0.5, 1.5, 0.5], [0.25 + JOINT_GAP / 2, 1.5 - JOINT_GAP, 0], [0, -0.75, 0], UV.leftLeg, UV.leftLegOuter);
-    this.makePart("rightLeg", [0.5, 1.5, 0.5], [-0.25 - JOINT_GAP / 2, 1.5 - JOINT_GAP, 0], [0, -0.75, 0], UV.rightLeg, UV.rightLegOuter);
+    const leftLimbOuter = {
+      expansion: [LIMB_OUTER_EXPANSION, LIMB_OUTER_EXPANSION, OUTER_LAYER_TOTAL],
+      offset: [LIMB_OUTER_OFFSET, -LIMB_OUTER_OFFSET, 0],
+    };
+    const rightLimbOuter = {
+      expansion: [LIMB_OUTER_EXPANSION, LIMB_OUTER_EXPANSION, OUTER_LAYER_TOTAL],
+      offset: [-LIMB_OUTER_OFFSET, -LIMB_OUTER_OFFSET, 0],
+    };
+    this.makePart("leftArm", [armWidth, 1.5, 0.5], [armX, shoulderY, 0], [0, -0.75, 0], leftArmUv, leftArmOuterUv, leftLimbOuter);
+    this.makePart("rightArm", [armWidth, 1.5, 0.5], [-armX, shoulderY, 0], [0, -0.75, 0], rightArmUv, rightArmOuterUv, rightLimbOuter);
+    this.makePart("leftLeg", [0.5, 1.5, 0.5], [0.25 + JOINT_GAP / 2, 1.5 - JOINT_GAP, 0], [0, -0.75, 0], UV.leftLeg, UV.leftLegOuter, leftLimbOuter);
+    this.makePart("rightLeg", [0.5, 1.5, 0.5], [-0.25 - JOINT_GAP / 2, 1.5 - JOINT_GAP, 0], [0, -0.75, 0], UV.rightLeg, UV.rightLegOuter, rightLimbOuter);
 
     if (this.activeAvatar) {
       this.activeAvatar.character = this.character;
@@ -273,7 +288,7 @@ export class BurhanPoseEditor {
     this.selectPart(this.selectedKey || "head");
   }
 
-  makePart(key, size, pivotPosition, meshPosition, uv, outerUv, outerInflation = 0.0625) {
+  makePart(key, size, pivotPosition, meshPosition, uv, outerUv, outerOptions = {}) {
     const pivot = new THREE.Group();
     pivot.position.set(...pivotPosition);
     pivot.userData = { partKey: key, label: PART_LABELS[key] };
@@ -286,9 +301,11 @@ export class BurhanPoseEditor {
     mesh.userData.avatarId = this.activeAvatar?.id;
     pivot.add(mesh);
 
-    const outerSize = size.map((value) => value + outerInflation);
+    const expansion = outerOptions.expansion || [OUTER_LAYER_TOTAL, OUTER_LAYER_TOTAL, OUTER_LAYER_TOTAL];
+    const offset = outerOptions.offset || [0, 0, 0];
+    const outerSize = size.map((value, axis) => value + expansion[axis]);
     const outer = this.makeBox(outerSize, outerUv, true);
-    outer.position.set(...meshPosition);
+    outer.position.set(...meshPosition.map((value, axis) => value + offset[axis]));
     outer.userData.partKey = key;
     outer.userData.avatarId = this.activeAvatar?.id;
     outer.renderOrder = 1;

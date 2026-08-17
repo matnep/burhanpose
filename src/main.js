@@ -167,7 +167,7 @@ document.querySelector("#app").innerHTML = `
       </aside>
     </main>
     <footer class="statusbar">
-      <span>developed by Matnepp from burhanbistrro&lt;3</span>
+      <span>developed by Matnepp from burhanbistro&lt;3</span>
       <a class="discord-link" href="https://discord.burhan.my" target="_blank" rel="noopener noreferrer" aria-label="Join the BurHan Discord" title="Join the BurHan Discord">${icon("discord")}</a>
     </footer>
   </div>
