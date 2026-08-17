@@ -471,8 +471,8 @@ export class BurhanPoseEditor {
     const model = response.headers.get("X-Skin-Model") || undefined;
     const name = response.headers.get("X-Player-Name") || username;
     const image = await loadImage(URL.createObjectURL(await response.blob()));
-    await this.loadSkinImage(image, model);
-    return { name, model };
+    const loaded = await this.loadSkinImage(image, model);
+    return { name, model: loaded.model };
   }
 
   loadSkinImage(image, suppliedModel) {
