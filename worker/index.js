@@ -39,6 +39,27 @@ function decodeTexturePayload(encodedTextures) {
   return JSON.parse(new TextDecoder().decode(bytes));
 }
 
+async function fetchFallbackSkin(username) {
+  const textureResponse = await fetch(`https://mc-heads.net/skin/${encodeURIComponent(username)}`, {
+    headers: { Accept: "image/png" },
+    signal: AbortSignal.timeout(10000),
+  });
+  if (textureResponse.status === 404) return json({ error: "Minecraft Java player not found." }, 404);
+  if (!textureResponse.ok) throw new Error(`Fallback texture download failed (${textureResponse.status})`);
+
+  const contentType = textureResponse.headers.get("content-type") || "";
+  if (!contentType.includes("image/png")) throw new Error("Fallback texture response was not a PNG");
+
+  return new Response(textureResponse.body, {
+    headers: {
+      "Content-Type": "image/png",
+      "Cache-Control": "public, max-age=300",
+      "X-Player-Name": username,
+      "X-Skin-Source": "MCHeads",
+    },
+  });
+}
+
 async function fetchSkin(username) {
   if (!/^[A-Za-z0-9_]{1,16}$/.test(username)) {
     return json({ error: "Enter a valid Minecraft Java username." }, 400);
@@ -46,7 +67,7 @@ async function fetchSkin(username) {
 
   try {
     const identity = await lookupIdentity(username);
-    if (!identity) return json({ error: "Minecraft Java player not found." }, 404);
+    if (!identity) return fetchFallbackSkin(username);
 
     const profileResponse = await fetchMinecraft(
       `https://sessionserver.mojang.com/session/minecraft/profile/${identity.id}?unsigned=false`,
@@ -55,10 +76,10 @@ async function fetchSkin(username) {
 
     const profile = await profileResponse.json();
     const encodedTextures = profile.properties?.find((property) => property.name === "textures")?.value;
-    if (!encodedTextures) return json({ error: "This profile has no skin texture." }, 404);
+    if (!encodedTextures) return fetchFallbackSkin(username);
 
     const skin = decodeTexturePayload(encodedTextures).textures?.SKIN;
-    if (!skin?.url) return json({ error: "This profile has no active skin." }, 404);
+    if (!skin?.url) return fetchFallbackSkin(username);
 
     const textureResponse = await fetch(skin.url.replace(/^http:/, "https:"), {
       signal: AbortSignal.timeout(10000),
@@ -76,10 +97,18 @@ async function fetchSkin(username) {
     });
   } catch (error) {
     console.error(JSON.stringify({
-      message: "Skin lookup failed",
+      message: "Official Minecraft skin lookup failed; trying fallback",
       error: error instanceof Error ? error.message : String(error),
     }));
-    return json({ error: "Minecraft skin services are unavailable. Try uploading a PNG." }, 502);
+    try {
+      return await fetchFallbackSkin(username);
+    } catch (fallbackError) {
+      console.error(JSON.stringify({
+        message: "Fallback Minecraft skin lookup failed",
+        error: fallbackError instanceof Error ? fallbackError.message : String(fallbackError),
+      }));
+      return json({ error: "Minecraft skin services are unavailable. Try uploading a PNG." }, 502);
+    }
   }
 }
 

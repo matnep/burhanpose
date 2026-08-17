@@ -468,7 +468,7 @@ export class BurhanPoseEditor {
       const payload = await response.json().catch(() => ({}));
       throw new Error(payload.error || "Could not fetch this Minecraft skin.");
     }
-    const model = response.headers.get("X-Skin-Model") || "classic";
+    const model = response.headers.get("X-Skin-Model") || undefined;
     const name = response.headers.get("X-Player-Name") || username;
     const image = await loadImage(URL.createObjectURL(await response.blob()));
     await this.loadSkinImage(image, model);
