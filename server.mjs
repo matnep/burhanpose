@@ -4,11 +4,15 @@ import { createServer as createViteServer } from "vite";
 const app = express();
 const port = Number(process.env.PORT || 4173);
 const production = process.env.NODE_ENV === "production";
-const skinCache = new Map();
 
 async function fetchMinecraft(url) {
   return fetch(url, {
-    headers: { Accept: "application/json", "User-Agent": "BurhanPose/0.1" },
+    headers: {
+      Accept: "application/json",
+      "Cache-Control": "no-cache",
+      "User-Agent": "BurhanPose/1.0",
+    },
+    cache: "no-store",
     signal: AbortSignal.timeout(10000),
   });
 }
@@ -35,24 +39,21 @@ async function lookupIdentity(username) {
 }
 
 app.get("/api/skin/:username", async (request, response) => {
+  response.set({
+    "Cache-Control": "no-store, no-cache, must-revalidate",
+    Pragma: "no-cache",
+  });
   const username = request.params.username.trim();
   if (!/^[A-Za-z0-9_]{1,16}$/.test(username)) {
     return response.status(400).json({ error: "Enter a valid Minecraft Java username." });
   }
 
   try {
-    const cacheKey = username.toLowerCase();
-    const cached = skinCache.get(cacheKey);
-    if (cached && cached.expiresAt > Date.now()) {
-      response.set(cached.headers);
-      return response.send(cached.buffer);
-    }
-
     const identity = await lookupIdentity(username);
     if (!identity) return response.status(404).json({ error: "Minecraft Java player not found." });
 
     const profileResponse = await fetchMinecraft(
-      `https://sessionserver.mojang.com/session/minecraft/profile/${identity.id}?unsigned=false`,
+      `https://sessionserver.mojang.com/session/minecraft/profile/${identity.id}?unsigned=true`,
     );
     if (!profileResponse.ok) throw new Error(`Profile lookup failed (${profileResponse.status})`);
 
@@ -69,13 +70,13 @@ app.get("/api/skin/:username", async (request, response) => {
 
     const headers = {
       "Content-Type": textureResponse.headers.get("content-type") || "image/png",
-      "Cache-Control": "public, max-age=300",
+      "Cache-Control": "no-store, no-cache, must-revalidate",
+      Pragma: "no-cache",
       "X-Skin-Model": skin.metadata?.model === "slim" ? "slim" : "classic",
       "X-Player-Name": identity.name,
       "X-Skin-Source": "Minecraft",
     };
     const buffer = Buffer.from(await textureResponse.arrayBuffer());
-    skinCache.set(cacheKey, { buffer, headers, expiresAt: Date.now() + 300000 });
     response.set(headers);
     response.send(buffer);
   } catch (error) {

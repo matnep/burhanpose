@@ -320,8 +320,11 @@ export class BurhanPoseEditor {
     applyBoxUv(geometry, uvMap);
     const material = new THREE.MeshStandardMaterial({
       map: this.texture,
-      transparent: false,
-      alphaTest: transparent ? 0.01 : 0,
+      // Base skin pixels are opaque, while hats/jackets/sleeves/trousers may
+      // contain genuinely translucent pixels (for example tinted glasses).
+      transparent,
+      alphaTest: transparent ? 0.001 : 0,
+      depthWrite: true,
       roughness: 0.82,
       metalness: 0,
       side: THREE.FrontSide,
@@ -496,7 +499,11 @@ export class BurhanPoseEditor {
   }
 
   async loadSkinUsername(username) {
-    const response = await fetch(`/api/skin/${encodeURIComponent(username)}`, { cache: "no-store" });
+    const refresh = Date.now();
+    const response = await fetch(`/api/skin/${encodeURIComponent(username)}?refresh=${refresh}`, {
+      cache: "no-store",
+      headers: { "Cache-Control": "no-cache" },
+    });
     if (!response.ok) {
       const payload = await response.json().catch(() => ({}));
       throw new Error(payload.error || "Could not fetch this Minecraft skin.");

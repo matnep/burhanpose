@@ -1,4 +1,11 @@
-const JSON_HEADERS = { "Content-Type": "application/json; charset=utf-8" };
+const NO_CACHE_HEADERS = {
+  "Cache-Control": "no-store, no-cache, must-revalidate",
+  Pragma: "no-cache",
+};
+const JSON_HEADERS = {
+  "Content-Type": "application/json; charset=utf-8",
+  ...NO_CACHE_HEADERS,
+};
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: JSON_HEADERS });
@@ -6,7 +13,11 @@ function json(data, status = 200) {
 
 async function fetchMinecraft(url) {
   return fetch(url, {
-    headers: { Accept: "application/json" },
+    headers: {
+      Accept: "application/json",
+      "Cache-Control": "no-cache",
+    },
+    cache: "no-store",
     signal: AbortSignal.timeout(10000),
   });
 }
@@ -58,7 +69,7 @@ async function fetchFallbackSkin(username) {
         return new Response(textureResponse.body, {
           headers: {
             "Content-Type": textureResponse.headers.get("content-type") || "image/png",
-            "Cache-Control": "public, max-age=300",
+            ...NO_CACHE_HEADERS,
             "X-Skin-Model": skin.metadata?.model === "slim" ? "slim" : "classic",
             "X-Player-Name": player.username || username,
             "X-Skin-Source": "PlayerDB",
@@ -86,7 +97,7 @@ async function fetchFallbackSkin(username) {
   return new Response(textureResponse.body, {
     headers: {
       "Content-Type": "image/png",
-      "Cache-Control": "public, max-age=300",
+      ...NO_CACHE_HEADERS,
       "X-Player-Name": username,
       "X-Skin-Source": "MCHeads",
     },
@@ -103,7 +114,9 @@ async function fetchSkin(username) {
     if (!identity) return fetchFallbackSkin(username);
 
     const profileResponse = await fetchMinecraft(
-      `https://sessionserver.mojang.com/session/minecraft/profile/${identity.id}?unsigned=false`,
+      // BurhanPose only needs the texture URL and model metadata. Avoid the
+      // signed-profile variant, which is more aggressively rate-limited.
+      `https://sessionserver.mojang.com/session/minecraft/profile/${identity.id}?unsigned=true`,
     );
     if (!profileResponse.ok) throw new Error(`Profile lookup failed (${profileResponse.status})`);
 
@@ -122,7 +135,7 @@ async function fetchSkin(username) {
     return new Response(textureResponse.body, {
       headers: {
         "Content-Type": textureResponse.headers.get("content-type") || "image/png",
-        "Cache-Control": "public, max-age=300",
+        ...NO_CACHE_HEADERS,
         "X-Skin-Model": skin.metadata?.model === "slim" ? "slim" : "classic",
         "X-Player-Name": identity.name,
         "X-Skin-Source": "Minecraft",
@@ -157,13 +170,9 @@ export default {
         return json({ error: "Enter a valid Minecraft Java username." }, 400);
       }
 
-      const cache = caches.default;
-      const cached = await cache.match(request);
-      if (cached) return cached;
-
-      const response = await fetchSkin(username);
-      if (response.ok) context.waitUntil(cache.put(request, response.clone()));
-      return response;
+      // Skin changes should appear as soon as Mojang's public profile service
+      // exposes them. Do not add a browser or Cloudflare edge-cache delay.
+      return fetchSkin(username);
     }
 
     if (url.pathname.startsWith("/api/")) return json({ error: "API route not found." }, 404);
