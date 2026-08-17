@@ -40,6 +40,39 @@ function decodeTexturePayload(encodedTextures) {
 }
 
 async function fetchFallbackSkin(username) {
+  try {
+    const profileResponse = await fetch(`https://playerdb.co/api/player/minecraft/${encodeURIComponent(username)}`, {
+      headers: { Accept: "application/json" },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (profileResponse.ok) {
+      const profile = await profileResponse.json();
+      const player = profile.data?.player;
+      const encodedTextures = player?.properties?.find((property) => property.name === "textures")?.value;
+      const skin = encodedTextures ? decodeTexturePayload(encodedTextures).textures?.SKIN : undefined;
+      if (skin?.url) {
+        const textureResponse = await fetch(skin.url.replace(/^http:/, "https:"), {
+          signal: AbortSignal.timeout(10000),
+        });
+        if (!textureResponse.ok) throw new Error(`PlayerDB texture download failed (${textureResponse.status})`);
+        return new Response(textureResponse.body, {
+          headers: {
+            "Content-Type": textureResponse.headers.get("content-type") || "image/png",
+            "Cache-Control": "public, max-age=300",
+            "X-Skin-Model": skin.metadata?.model === "slim" ? "slim" : "classic",
+            "X-Player-Name": player.username || username,
+            "X-Skin-Source": "PlayerDB",
+          },
+        });
+      }
+    }
+  } catch (error) {
+    console.error(JSON.stringify({
+      message: "PlayerDB skin fallback failed; trying MCHeads",
+      error: error instanceof Error ? error.message : String(error),
+    }));
+  }
+
   const textureResponse = await fetch(`https://mc-heads.net/skin/${encodeURIComponent(username)}`, {
     headers: { Accept: "image/png" },
     signal: AbortSignal.timeout(10000),
