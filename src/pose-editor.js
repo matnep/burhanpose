@@ -3,7 +3,9 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 
 const DEG = Math.PI / 180;
 const SKIN_SIZE = 64;
-const JOINT_GAP = 0.003;
+// Adjacent parts meet exactly. The outer shells expand away from joints so
+// their visible faces share an edge without overlapping or exposing a seam.
+const JOINT_GAP = 0;
 const OUTER_LAYER_TOTAL = 0.0625;
 const OUTER_LAYER_SIDE = OUTER_LAYER_TOTAL / 2;
 const JOINT_TRIM = JOINT_GAP / 2;
@@ -323,6 +325,12 @@ export class BurhanPoseEditor {
       roughness: 0.82,
       metalness: 0,
       side: THREE.FrontSide,
+      // The torso shell is intentionally flush on joint-facing axes. Bias its
+      // fragments toward the camera so those coincident shell/base faces do
+      // not flicker while adjacent parts remain geometrically disjoint.
+      polygonOffset: transparent,
+      polygonOffsetFactor: transparent ? -1 : 0,
+      polygonOffsetUnits: transparent ? -1 : 0,
     });
     material.userData.baseEmissive = new THREE.Color(0x000000);
     return new THREE.Mesh(geometry, material);
