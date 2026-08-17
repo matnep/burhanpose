@@ -75,7 +75,10 @@ async function fetchSkin(username) {
       },
     });
   } catch (error) {
-    console.error("Skin lookup failed:", error);
+    console.error(JSON.stringify({
+      message: "Skin lookup failed",
+      error: error instanceof Error ? error.message : String(error),
+    }));
     return json({ error: "Minecraft skin services are unavailable. Try uploading a PNG." }, 502);
   }
 }
@@ -105,4 +108,3 @@ export default {
     return env.ASSETS.fetch(request);
   },
 };
-
