@@ -32,5 +32,14 @@ npm run build
 npm start
 ```
 
-Skin lookup is performed by the local server so browsers do not depend on third-party skin sites or cross-origin workarounds.
+## Deploy to Cloudflare
 
+BurhanPose deploys as one Cloudflare Worker containing both the Vite frontend and the Minecraft skin API.
+
+```bash
+npm run deploy
+```
+
+The checked-in `wrangler.jsonc` serves `dist/` as a single-page application and sends `/api/*` requests through the Worker. Cloudflare Builds can connect directly to this GitHub repository for automatic deployments from `main`.
+
+Skin lookup is performed by the same-origin Node server locally and by the Worker in production, so browsers do not depend on third-party skin sites or cross-origin workarounds.
