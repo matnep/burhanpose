@@ -736,6 +736,80 @@ export class BurhanPoseEditor {
     return result;
   }
 
+  async captureActiveAvatar(requestedResolution = 1400) {
+    if (this.exporting) throw new Error("An export is already in progress.");
+    if (!this.activeAvatar?.character) throw new Error("Choose an avatar before creating a card.");
+    const maxResolution = Math.min(2048, this.renderer.capabilities.maxTextureSize || 2048);
+    const resolution = THREE.MathUtils.clamp(Math.round(Number(requestedResolution) || 1400), 512, maxResolution);
+    const oldPixelRatio = this.renderer.getPixelRatio();
+    const oldSize = this.renderer.getSize(new THREE.Vector2());
+    const oldBackground = this.scene.background;
+    const oldClearColor = this.renderer.getClearColor(new THREE.Color()).clone();
+    const oldClearAlpha = this.renderer.getClearAlpha();
+    const oldPosition = this.camera.position.clone();
+    const oldQuaternion = this.camera.quaternion.clone();
+    const oldTarget = this.orbit.target.clone();
+    const oldPerspectiveAspect = this.perspectiveCamera.aspect;
+    const oldOrthographicHeight = this.orthographicHeight;
+    const oldTransition = this.cameraTransition;
+    const visibility = this.avatars.map((avatar) => [avatar.character, avatar.character?.visible]);
+    const highlights = [];
+
+    this.exporting = true;
+    try {
+      visibility.forEach(([character]) => { if (character) character.visible = character === this.activeAvatar.character; });
+      this.activeAvatar.character.traverse((object) => {
+        if (!object.isMesh) return;
+        highlights.push([object.material, object.material.emissiveIntensity]);
+        object.material.emissiveIntensity = 0;
+      });
+      const bounds = new THREE.Box3().setFromObject(this.activeAvatar.character);
+      const sphere = bounds.getBoundingSphere(new THREE.Sphere());
+      const direction = oldPosition.clone().sub(oldTarget).normalize();
+      if (!Number.isFinite(direction.lengthSq()) || direction.lengthSq() < 0.5) direction.set(0, 0, 1);
+      this.cameraTransition = null;
+      this.orbit.target.copy(sphere.center);
+      if (this.camera.isPerspectiveCamera) {
+        this.camera.aspect = 1;
+        this.camera.updateProjectionMatrix();
+        const distance = sphere.radius / Math.sin(this.camera.fov * DEG / 2) * 1.08;
+        this.camera.position.copy(sphere.center).add(direction.multiplyScalar(distance));
+      } else {
+        this.orthographicHeight = Math.max(2.5, sphere.radius * 2.35);
+        this.updateOrthographicProjection(1);
+        this.camera.position.copy(sphere.center).add(direction.multiplyScalar(10));
+      }
+      this.camera.lookAt(sphere.center);
+      this.scene.background = null;
+      this.renderer.setClearColor(0x000000, 0);
+      this.renderer.setPixelRatio(1);
+      this.renderer.setSize(resolution, resolution, false);
+      this.renderer.clear(true, true, true);
+      this.renderer.render(this.scene, this.camera);
+      const blob = await new Promise((resolve) => this.renderer.domElement.toBlob(resolve, "image/png"));
+      if (!blob) throw new Error("The browser could not capture this avatar.");
+      return blob;
+    } finally {
+      visibility.forEach(([character, visible]) => { if (character) character.visible = visible; });
+      highlights.forEach(([material, intensity]) => { material.emissiveIntensity = intensity; });
+      this.scene.background = oldBackground;
+      this.renderer.setClearColor(oldClearColor, oldClearAlpha);
+      this.renderer.setPixelRatio(oldPixelRatio);
+      this.renderer.setSize(oldSize.x, oldSize.y, false);
+      this.camera.position.copy(oldPosition);
+      this.camera.quaternion.copy(oldQuaternion);
+      this.orbit.target.copy(oldTarget);
+      this.perspectiveCamera.aspect = oldPerspectiveAspect;
+      this.perspectiveCamera.updateProjectionMatrix();
+      this.orthographicHeight = oldOrthographicHeight;
+      this.updateOrthographicProjection(this.container.clientWidth / Math.max(this.container.clientHeight, 1));
+      this.cameraTransition = oldTransition;
+      this.exporting = false;
+      this.orbit.update();
+      this.renderer.render(this.scene, this.camera);
+    }
+  }
+
   resize() {
     const width = this.container.clientWidth;
     const height = this.container.clientHeight;

@@ -15,7 +15,8 @@ BurhanPose 1.0.0 is a focused, browser-based Minecraft character posing and rend
 - Perspective and true orthographic isometric camera presets
 - Avatar height controls and floor placement
 - Dark Geist Mono interface
-- Transparent 1600×1600 PNG export
+- Transparent scene export at 1K, 2K, or 4K
+- Card Studio · 06 with four original themes, interactive holographic foil, and 3000×4200 PNG export
 
 ## Run locally
 
@@ -48,3 +49,5 @@ Skin lookup is performed by the same-origin Node server locally and by the Worke
 ## Credits
 
 The optional 3D outer-layer mode is inspired by [3D Skin Layers by tr7zw](https://github.com/tr7zw/3d-skin-layers). BurhanPose uses its own browser-oriented voxel geometry implementation.
+
+The Card Studio holographic interaction is visually inspired by [pokemon-cards-css by simeydotme](https://github.com/simeydotme/pokemon-cards-css). BurhanPose's card design, CSS, and canvas renderer are original implementations.

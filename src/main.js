@@ -1,6 +1,7 @@
 import "@fontsource-variable/geist-mono";
 import "./style.css";
 import { BurhanPoseEditor, POSES } from "./pose-editor.js";
+import { CardStudio } from "./card-studio.js";
 
 const icon = (name) => {
   const paths = {
@@ -15,6 +16,7 @@ const icon = (name) => {
     plus: '<path d="M12 5v14M5 12h14"/>',
     trash: '<path d="M4 7h16M9 7V4h6v3m3 0-1 14H7L6 7m4 4v6m4-6v6"/>',
     discord: '<path class="icon-fill" d="M18.9 5.3A16 16 0 0 0 15.7 4l-.4.8a14 14 0 0 0-6.6 0L8.3 4a16 16 0 0 0-3.2 1.3C3 8.4 2.4 11.4 2.7 14.4a13 13 0 0 0 4 2l1-1.4a8 8 0 0 1-1.5-.8l.4-.3c2.9 1.3 7.6 1.3 10.4 0l.5.3c-.5.3-1 .6-1.6.8l1 1.4a13 13 0 0 0 4-2c.4-3.5-.7-6.4-2-9.1ZM8.8 13c-1 0-1.7-.9-1.7-2s.8-2 1.7-2c1 0 1.8.9 1.8 2s-.8 2-1.8 2Zm6.4 0c-1 0-1.8-.9-1.8-2s.8-2 1.8-2 1.7.9 1.7 2-.8 2-1.7 2Z"/>',
+    sparkles: '<path d="m12 2 1.8 5.2L19 9l-5.2 1.8L12 16l-1.8-5.2L5 9l5.2-1.8L12 2Zm7 12 .9 2.6 2.6.9-2.6.9L19 21l-.9-2.6-2.6-.9 2.6-.9L19 14ZM5 14l.7 2.1 2.1.7-2.1.7L5 20l-.7-2.5-2.1-.7 2.1-.7L5 14Z"/>',
   };
   return `<svg viewBox="0 0 24 24" aria-hidden="true">${paths[name]}</svg>`;
 };
@@ -170,6 +172,12 @@ document.querySelector("#app").innerHTML = `
           </div>
           <div class="slider-setting"><div><strong>Field of view</strong><output id="fovOutput">35°</output></div><input id="fovSlider" type="range" min="20" max="70" value="35"></div>
         </section>
+
+        <section class="panel-section card-launch-section">
+          <div class="section-heading"><span>Card studio</span><span class="step-label">06</span></div>
+          <p class="card-launch-copy">Turn the active pose into an original holographic player card.</p>
+          <button class="card-launch-button" id="openCardStudioButton">${icon("sparkles")} Create player card</button>
+        </section>
       </aside>
     </main>
     <footer class="statusbar">
@@ -188,6 +196,8 @@ const rotationInputs = ["x", "y", "z"].map((axis) => ({
 let updatingInputs = false;
 const DEFAULT_AVATAR_NAMES = ["Matnepp", "MoonWiRaja", "AshotSenpai", "Amadszz", "iquzo"];
 const defaultAvatarName = DEFAULT_AVATAR_NAMES[Math.floor(Math.random() * DEFAULT_AVATAR_NAMES.length)];
+let activeAvatarSnapshot = { name: defaultAvatarName, model: "classic" };
+let activePoseLabel = "Idle";
 
 let editor;
 editor = new BurhanPoseEditor($("#viewport"), {
@@ -211,6 +221,7 @@ editor = new BurhanPoseEditor($("#viewport"), {
     renderAvatarList(avatars);
     const active = avatars.find((avatar) => avatar.active);
     if (active) {
+      activeAvatarSnapshot = active;
       $("#partPreview").src = active.preview;
       $("#documentName").textContent = `${active.name}'s pose`;
     }
@@ -223,6 +234,16 @@ editor = new BurhanPoseEditor($("#viewport"), {
     setTimeout(() => { button.innerHTML = `${icon("download")} Export PNG`; }, 1800);
   },
 }, { name:defaultAvatarName, source:"Loading Minecraft profile…" });
+
+const cardStudio = new CardStudio({
+  editor,
+  getMetadata: () => ({
+    name: activeAvatarSnapshot?.name || "PLAYER",
+    model: activeAvatarSnapshot?.model || "classic",
+    pose: activePoseLabel,
+    layers3d: $("#skinLayers3dToggle").checked && $("#outerLayerToggle").checked,
+  }),
+});
 
 function renderAvatarList(avatars) {
   $("#avatarList").innerHTML = avatars.map((avatar) => `
@@ -341,6 +362,7 @@ async function loadDefaultAvatar() {
 }
 
 function activatePoseButton(name) {
+  activePoseLabel = name ? (POSES[name]?.label || "Custom") : "Custom";
   document.querySelectorAll("[data-pose]").forEach((button) => button.classList.toggle("active", button.dataset.pose === name));
 }
 
@@ -426,6 +448,18 @@ $("#exportButton").addEventListener("click", async () => {
     button.innerHTML = `${icon("download")} Export PNG`;
   } finally {
     button.disabled = false;
+  }
+});
+
+$("#openCardStudioButton").addEventListener("click", async () => {
+  const button = $("#openCardStudioButton");
+  button.disabled = true;
+  button.innerHTML = `${icon("sparkles")} Capturing pose…`;
+  try {
+    await cardStudio.open();
+  } finally {
+    button.disabled = false;
+    button.innerHTML = `${icon("sparkles")} Create player card`;
   }
 });
 
