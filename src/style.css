@@ -103,6 +103,11 @@ svg .icon-fill { fill:currentColor; stroke:none; }
 .toggle-row > span,.color-setting > div:first-child { display:flex; flex-direction:column; }
 .toggle-row strong,.color-setting strong,.slider-setting strong { font-size:9px; font-weight:600; }
 .toggle-row small,.color-setting small { margin-top:3px; color:var(--faint); font-size:7px; }
+.layers-section .layer-toggle:first-of-type { margin-top:0; }
+.layers-section .layer-toggle + .layer-toggle { padding-top:14px; border-top:1px solid var(--line-soft); }
+.feature-credit { margin:14px 0 0; padding-top:12px; border-top:1px solid var(--line-soft); color:var(--faint); font-size:7px; line-height:1.6; }
+.feature-credit a { color:#9fca69; text-decoration:none; }
+.feature-credit a:hover { color:var(--acid); text-decoration:underline; }
 .switch { position:relative; width:34px; height:19px; }
 .switch input { opacity:0; position:absolute; }
 .switch i { position:absolute; inset:0; border-radius:15px; background:#343d35; transition:.2s; }

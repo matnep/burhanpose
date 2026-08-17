@@ -7,6 +7,7 @@ const SKIN_SIZE = 64;
 // their visible faces share an edge without overlapping or exposing a seam.
 const JOINT_GAP = 0;
 const OUTER_LAYER_TOTAL = 0.0625;
+const VOXEL_LAYER_DEPTH = 0.0625;
 const OUTER_LAYER_SIDE = OUTER_LAYER_TOTAL / 2;
 const JOINT_TRIM = JOINT_GAP / 2;
 const LIMB_OUTER_EXPANSION = OUTER_LAYER_SIDE - JOINT_TRIM;
@@ -71,6 +72,9 @@ export class BurhanPoseEditor {
     this.selectedKey = null;
     this.lastPartKey = "head";
     this.outerMeshes = [];
+    this.voxelMeshes = [];
+    this.outerLayerVisible = true;
+    this.skinLayers3d = false;
     this.history = [];
     this.future = [];
     this.poseRootOverride = false;
@@ -142,6 +146,7 @@ export class BurhanPoseEditor {
       character: null,
       parts: {},
       outerMeshes: [],
+      voxelMeshes: [],
       history: [],
       future: [],
       selectedKey: "head",
@@ -187,6 +192,7 @@ export class BurhanPoseEditor {
     this.character = avatar.character;
     this.parts = avatar.parts;
     this.outerMeshes = avatar.outerMeshes;
+    this.voxelMeshes = avatar.voxelMeshes;
     this.texture = avatar.texture;
     this.model = avatar.model;
     this.history = avatar.history;
@@ -243,9 +249,16 @@ export class BurhanPoseEditor {
     const previousPosition = this.character?.position.clone() || new THREE.Vector3();
     if (this.character) {
       this.scene.remove(this.character);
+      this.character.traverse((object) => {
+        if (!object.isMesh) return;
+        object.geometry.dispose();
+        const materials = Array.isArray(object.material) ? object.material : [object.material];
+        materials.forEach((material) => material.dispose());
+      });
     }
     this.parts = {};
     this.outerMeshes = [];
+    this.voxelMeshes = [];
     this.character = new THREE.Group();
     this.character.name = this.activeAvatar?.name || "Character";
     this.character.userData.avatarId = this.activeAvatar?.id;
@@ -284,6 +297,7 @@ export class BurhanPoseEditor {
       this.activeAvatar.character = this.character;
       this.activeAvatar.parts = this.parts;
       this.activeAvatar.outerMeshes = this.outerMeshes;
+      this.activeAvatar.voxelMeshes = this.voxelMeshes;
       this.activeAvatar.texture = this.texture;
       this.activeAvatar.model = this.model;
     }
@@ -311,8 +325,18 @@ export class BurhanPoseEditor {
     outer.userData.partKey = key;
     outer.userData.avatarId = this.activeAvatar?.id;
     outer.renderOrder = 1;
+    outer.visible = this.outerLayerVisible && !this.skinLayers3d;
     pivot.add(outer);
     this.outerMeshes.push(outer);
+
+    const voxels = this.makeVoxelLayer(size, outerUv);
+    voxels.position.set(...meshPosition);
+    voxels.userData.partKey = key;
+    voxels.userData.avatarId = this.activeAvatar?.id;
+    voxels.renderOrder = 2;
+    voxels.visible = this.outerLayerVisible && this.skinLayers3d;
+    pivot.add(voxels);
+    this.voxelMeshes.push(voxels);
   }
 
   makeBox(size, uvMap, transparent) {
@@ -334,6 +358,21 @@ export class BurhanPoseEditor {
       polygonOffset: transparent,
       polygonOffsetFactor: transparent ? -1 : 0,
       polygonOffsetUnits: transparent ? -1 : 0,
+    });
+    material.userData.baseEmissive = new THREE.Color(0x000000);
+    return new THREE.Mesh(geometry, material);
+  }
+
+  makeVoxelLayer(size, uvMap) {
+    const geometry = buildVoxelLayerGeometry(size, uvMap, this.texture.userData.sourceCanvas);
+    const material = new THREE.MeshStandardMaterial({
+      map: this.texture,
+      transparent: true,
+      alphaTest: 0.001,
+      depthWrite: true,
+      roughness: 0.82,
+      metalness: 0,
+      side: THREE.FrontSide,
     });
     material.userData.baseEmissive = new THREE.Color(0x000000);
     return new THREE.Mesh(geometry, material);
@@ -557,7 +596,21 @@ export class BurhanPoseEditor {
     this.emitAvatarsChange();
   }
 
-  setOuterLayer(visible) { this.outerMeshes.forEach((mesh) => { mesh.visible = visible; }); }
+  setOuterLayer(visible) {
+    this.outerLayerVisible = visible;
+    this.avatars.forEach((avatar) => {
+      avatar.outerMeshes.forEach((mesh) => { mesh.visible = visible && !this.skinLayers3d; });
+      avatar.voxelMeshes.forEach((mesh) => { mesh.visible = visible && this.skinLayers3d; });
+    });
+  }
+
+  set3dSkinLayers(enabled) {
+    this.skinLayers3d = enabled;
+    this.avatars.forEach((avatar) => {
+      avatar.outerMeshes.forEach((mesh) => { mesh.visible = this.outerLayerVisible && !enabled; });
+      avatar.voxelMeshes.forEach((mesh) => { mesh.visible = this.outerLayerVisible && enabled; });
+    });
+  }
   setBackground(color) { this.background.set(color); this.scene.background = this.background; }
   setLightDirection(degrees) {
     const radians = degrees * DEG;
@@ -720,6 +773,125 @@ export class BurhanPoseEditor {
       this.callbacks.onStats?.({ drawCalls:this.renderer.info.render.calls, triangles:this.renderer.info.render.triangles });
     }
   };
+}
+
+function buildVoxelLayerGeometry(size, uvMap, sourceCanvas) {
+  const positions = [];
+  const normals = [];
+  const uvs = [];
+  const indices = [];
+  let voxelCount = 0;
+  const context = sourceCanvas.getContext("2d", { willReadFrequently: true });
+  const pixels = context.getImageData(0, 0, SKIN_SIZE, SKIN_SIZE).data;
+  const [sx, sy, sz] = size;
+
+  Object.entries(uvMap).forEach(([face, [textureX, textureY, pixelWidth, pixelHeight]]) => {
+    const directions = VOXEL_FACE_DIRECTIONS[face];
+    for (let row = 0; row < pixelHeight; row += 1) {
+      for (let column = 0; column < pixelWidth; column += 1) {
+        const pixelX = textureX + column;
+        const pixelY = textureY + row;
+        if (pixels[(pixelY * SKIN_SIZE + pixelX) * 4 + 3] === 0) continue;
+        voxelCount += 1;
+
+        const cell = voxelCellForFace(face, column, row, pixelWidth, pixelHeight, sx, sy, sz);
+        const u = (pixelX + 0.5) / SKIN_SIZE;
+        const v = 1 - (pixelY + 0.5) / SKIN_SIZE;
+        const visibleNormals = [directions.outward];
+        directions.neighbors.forEach(({ dc, dr, normal }) => {
+          const neighborColumn = column + dc;
+          const neighborRow = row + dr;
+          const outside = neighborColumn < 0 || neighborColumn >= pixelWidth || neighborRow < 0 || neighborRow >= pixelHeight;
+          const neighborAlpha = outside
+            ? 0
+            : pixels[((textureY + neighborRow) * SKIN_SIZE + textureX + neighborColumn) * 4 + 3];
+          if (neighborAlpha === 0) visibleNormals.push(normal);
+        });
+        appendVoxel(positions, normals, uvs, indices, cell.center, cell.size, u, v, visibleNormals);
+      }
+    }
+  });
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute("normal", new THREE.Float32BufferAttribute(normals, 3));
+  geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+  geometry.setIndex(indices);
+  geometry.userData.voxelCount = voxelCount;
+  geometry.userData.triangleCount = indices.length / 3;
+  geometry.computeBoundingBox();
+  geometry.computeBoundingSphere();
+  return geometry;
+}
+
+function voxelCellForFace(face, column, row, pixelWidth, pixelHeight, sx, sy, sz) {
+  const depth = VOXEL_LAYER_DEPTH;
+  if (face === "right" || face === "left") {
+    return {
+      center: [
+        (face === "right" ? 1 : -1) * (sx / 2 + depth / 2),
+        sy / 2 - ((row + 0.5) * sy) / pixelHeight,
+        face === "right"
+          ? sz / 2 - ((column + 0.5) * sz) / pixelWidth
+          : -sz / 2 + ((column + 0.5) * sz) / pixelWidth,
+      ],
+      size: [depth, sy / pixelHeight, sz / pixelWidth],
+    };
+  }
+  if (face === "top" || face === "bottom") {
+    return {
+      center: [
+        -sx / 2 + ((column + 0.5) * sx) / pixelWidth,
+        (face === "top" ? 1 : -1) * (sy / 2 + depth / 2),
+        -sz / 2 + ((row + 0.5) * sz) / pixelHeight,
+      ],
+      size: [sx / pixelWidth, depth, sz / pixelHeight],
+    };
+  }
+  return {
+    center: [
+      face === "front"
+        ? -sx / 2 + ((column + 0.5) * sx) / pixelWidth
+        : sx / 2 - ((column + 0.5) * sx) / pixelWidth,
+      sy / 2 - ((row + 0.5) * sy) / pixelHeight,
+      (face === "front" ? 1 : -1) * (sz / 2 + depth / 2),
+    ],
+    size: [sx / pixelWidth, sy / pixelHeight, depth],
+  };
+}
+
+const VOXEL_FACE_DIRECTIONS = {
+  right: { outward:[1,0,0], neighbors:[{dc:-1,dr:0,normal:[0,0,1]},{dc:1,dr:0,normal:[0,0,-1]},{dc:0,dr:-1,normal:[0,1,0]},{dc:0,dr:1,normal:[0,-1,0]}] },
+  left: { outward:[-1,0,0], neighbors:[{dc:-1,dr:0,normal:[0,0,-1]},{dc:1,dr:0,normal:[0,0,1]},{dc:0,dr:-1,normal:[0,1,0]},{dc:0,dr:1,normal:[0,-1,0]}] },
+  top: { outward:[0,1,0], neighbors:[{dc:-1,dr:0,normal:[-1,0,0]},{dc:1,dr:0,normal:[1,0,0]},{dc:0,dr:-1,normal:[0,0,-1]},{dc:0,dr:1,normal:[0,0,1]}] },
+  bottom: { outward:[0,-1,0], neighbors:[{dc:-1,dr:0,normal:[-1,0,0]},{dc:1,dr:0,normal:[1,0,0]},{dc:0,dr:-1,normal:[0,0,-1]},{dc:0,dr:1,normal:[0,0,1]}] },
+  front: { outward:[0,0,1], neighbors:[{dc:-1,dr:0,normal:[-1,0,0]},{dc:1,dr:0,normal:[1,0,0]},{dc:0,dr:-1,normal:[0,1,0]},{dc:0,dr:1,normal:[0,-1,0]}] },
+  back: { outward:[0,0,-1], neighbors:[{dc:-1,dr:0,normal:[1,0,0]},{dc:1,dr:0,normal:[-1,0,0]},{dc:0,dr:-1,normal:[0,1,0]},{dc:0,dr:1,normal:[0,-1,0]}] },
+};
+
+function appendVoxel(positions, normals, uvs, indices, center, size, u, v, visibleNormals) {
+  const [cx, cy, cz] = center;
+  const [hx, hy, hz] = size.map((value) => value / 2);
+  const faces = [
+    { normal:[1,0,0], corners:[[hx,hy,hz],[hx,hy,-hz],[hx,-hy,hz],[hx,-hy,-hz]] },
+    { normal:[-1,0,0], corners:[[-hx,hy,-hz],[-hx,hy,hz],[-hx,-hy,-hz],[-hx,-hy,hz]] },
+    { normal:[0,1,0], corners:[[-hx,hy,-hz],[hx,hy,-hz],[-hx,hy,hz],[hx,hy,hz]] },
+    { normal:[0,-1,0], corners:[[-hx,-hy,hz],[hx,-hy,hz],[-hx,-hy,-hz],[hx,-hy,-hz]] },
+    { normal:[0,0,1], corners:[[-hx,hy,hz],[hx,hy,hz],[-hx,-hy,hz],[hx,-hy,hz]] },
+    { normal:[0,0,-1], corners:[[hx,hy,-hz],[-hx,hy,-hz],[hx,-hy,-hz],[-hx,-hy,-hz]] },
+  ];
+
+  const visible = new Set(visibleNormals.map((normal) => normal.join(",")));
+  faces.forEach(({ normal, corners }) => {
+    if (!visible.has(normal.join(","))) return;
+    const offset = positions.length / 3;
+    corners.forEach(([x, y, z]) => {
+      positions.push(cx + x, cy + y, cz + z);
+      normals.push(...normal);
+      uvs.push(u, v);
+    });
+    indices.push(offset, offset + 2, offset + 1, offset + 2, offset + 3, offset + 1);
+  });
 }
 
 function skinBoxUv(u, v, width, height, depth) {

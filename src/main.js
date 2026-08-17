@@ -87,7 +87,6 @@ document.querySelector("#app").innerHTML = `
           <div class="or-divider"><span>or</span></div>
           <label class="upload-button" for="skinFile">${icon("upload")} Upload skin PNG</label>
           <input id="skinFile" type="file" accept="image/png" hidden />
-          <div class="toggle-row"><span><strong>Outer layer</strong><small>Hat, jacket & sleeves</small></span><label class="switch"><input id="outerLayerToggle" type="checkbox" checked><i></i></label></div>
           <p class="inline-message" id="importMessage" role="status"></p>
         </section>
 
@@ -96,6 +95,13 @@ document.querySelector("#app").innerHTML = `
           <div class="pose-grid" id="poseGrid">
             ${Object.entries(POSES).map(([key, pose], index) => `<button data-pose="${key}" class="${index === 0 ? "active" : ""}"><span class="pose-figure pose-${key}">${poseIcon(key)}</span><span>${pose.label}</span></button>`).join("")}
           </div>
+        </section>
+
+        <section class="panel-section layers-section">
+          <div class="section-heading"><span>Skin layers</span><span class="step-label">03</span></div>
+          <div class="toggle-row layer-toggle"><span><strong>Outer layer</strong><small>Hat, jacket & sleeves</small></span><label class="switch"><input id="outerLayerToggle" type="checkbox" checked><i></i></label></div>
+          <div class="toggle-row layer-toggle"><span><strong>3D skin layers</strong><small>Extrude visible outer pixels</small></span><label class="switch"><input id="skinLayers3dToggle" type="checkbox"><i></i></label></div>
+          <p class="feature-credit">Inspired by <a href="https://github.com/tr7zw/3d-skin-layers" target="_blank" rel="noopener noreferrer">3D Skin Layers by tr7zw</a>.</p>
         </section>
       </aside>
 
@@ -381,6 +387,7 @@ $("#poseGrid").addEventListener("click", (event) => {
 });
 
 $("#outerLayerToggle").addEventListener("change", (event) => editor.setOuterLayer(event.target.checked));
+$("#skinLayers3dToggle").addEventListener("change", (event) => editor.set3dSkinLayers(event.target.checked));
 $("#backgroundColor").addEventListener("input", (event) => {
   editor.setBackground(event.target.value);
   event.target.nextElementSibling.textContent = event.target.value.toUpperCase();
