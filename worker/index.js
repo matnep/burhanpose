@@ -50,7 +50,39 @@ function decodeTexturePayload(encodedTextures) {
   return JSON.parse(new TextDecoder().decode(bytes));
 }
 
-async function fetchFallbackSkin(username) {
+async function fetchFallbackSkin(username, uuid) {
+  const refresh = Date.now();
+  const mirrors = [
+    { name: "Minotar", url: `https://minotar.net/skin/${encodeURIComponent(username)}?refresh=${refresh}` },
+    ...(uuid ? [{ name: "Visage", url: `https://visage.surgeplay.com/skin/${uuid}?refresh=${refresh}` }] : []),
+    { name: "MineSkin", url: `https://mineskin.eu/skin/${encodeURIComponent(username)}?refresh=${refresh}` },
+  ];
+
+  for (const mirror of mirrors) {
+    try {
+      const textureResponse = await fetch(mirror.url, {
+        headers: { Accept: "image/png", "Cache-Control": "no-cache" },
+        cache: "no-store",
+        signal: AbortSignal.timeout(10000),
+      });
+      const contentType = textureResponse.headers.get("content-type") || "";
+      if (!textureResponse.ok || !contentType.includes("image/png")) continue;
+      return new Response(textureResponse.body, {
+        headers: {
+          "Content-Type": "image/png",
+          ...NO_CACHE_HEADERS,
+          "X-Player-Name": username,
+          "X-Skin-Source": mirror.name,
+        },
+      });
+    } catch (error) {
+      console.error(JSON.stringify({
+        message: `${mirror.name} skin fallback failed`,
+        error: error instanceof Error ? error.message : String(error),
+      }));
+    }
+  }
+
   try {
     const profileResponse = await fetch(`https://playerdb.co/api/player/minecraft/${encodeURIComponent(username)}`, {
       headers: { Accept: "application/json" },
@@ -109,8 +141,9 @@ async function fetchSkin(username) {
     return json({ error: "Enter a valid Minecraft Java username." }, 400);
   }
 
+  let identity;
   try {
-    const identity = await lookupIdentity(username);
+    identity = await lookupIdentity(username);
     if (!identity) return fetchFallbackSkin(username);
 
     const profileResponse = await fetchMinecraft(
@@ -122,10 +155,10 @@ async function fetchSkin(username) {
 
     const profile = await profileResponse.json();
     const encodedTextures = profile.properties?.find((property) => property.name === "textures")?.value;
-    if (!encodedTextures) return fetchFallbackSkin(username);
+    if (!encodedTextures) return fetchFallbackSkin(username, identity.id);
 
     const skin = decodeTexturePayload(encodedTextures).textures?.SKIN;
-    if (!skin?.url) return fetchFallbackSkin(username);
+    if (!skin?.url) return fetchFallbackSkin(username, identity.id);
 
     const textureResponse = await fetch(skin.url.replace(/^http:/, "https:"), {
       signal: AbortSignal.timeout(10000),
@@ -147,7 +180,7 @@ async function fetchSkin(username) {
       error: error instanceof Error ? error.message : String(error),
     }));
     try {
-      return await fetchFallbackSkin(username);
+      return await fetchFallbackSkin(username, identity?.id);
     } catch (fallbackError) {
       console.error(JSON.stringify({
         message: "Fallback Minecraft skin lookup failed",
