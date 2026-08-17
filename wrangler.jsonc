@@ -1,6 +1,7 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "burhanpose",
+  "account_id": "fd8a014bf414b29b29f2f1ee13101eba",
   "main": "./worker/index.js",
   "compatibility_date": "2026-08-17",
   "compatibility_flags": ["nodejs_compat"],
