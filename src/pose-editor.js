@@ -496,7 +496,7 @@ export class BurhanPoseEditor {
   }
 
   async loadSkinUsername(username) {
-    const response = await fetch(`/api/skin/${encodeURIComponent(username)}`);
+    const response = await fetch(`/api/skin/${encodeURIComponent(username)}`, { cache: "no-store" });
     if (!response.ok) {
       const payload = await response.json().catch(() => ({}));
       throw new Error(payload.error || "Could not fetch this Minecraft skin.");
