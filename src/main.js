@@ -52,7 +52,6 @@ document.querySelector("#app").innerHTML = `
         <span class="brand-name">burhan<span>pose</span></span><small class="beta-badge">Beta</small>
       </a>
       <div class="document-name">
-        <span class="status-dot"></span>
         <span id="documentName">Untitled pose</span>
       </div>
       <div class="top-actions">
@@ -321,7 +320,7 @@ $("#skinFile").addEventListener("change", async (event) => {
   try {
     const result = await editor.loadSkinFile(file);
     setSkinIdentity(file.name.replace(/\.png$/i, ""), `Uploaded · ${result.model}`);
-    setMessage(`Detected ${result.model} model.`, "success");
+    setMessage("");
   } catch (error) {
     setMessage(error.message, "error");
   }

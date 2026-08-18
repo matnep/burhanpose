@@ -56,7 +56,6 @@ export class CardStudio {
                 </div>
               </article>
             </div>
-            <p>Drag the avatar to reposition · Scroll to zoom · Double-click to center</p>
           </div>
           <form class="card-controls" onsubmit="return false">
             <label>Player name<input id="cardName" maxlength="16" /></label>
@@ -73,7 +72,6 @@ export class CardStudio {
             </div>
             <label>Artwork scale <output id="cardScaleOutput">100%</output><input id="cardScale" type="range" min="60" max="200" value="100" /></label>
             <label>Foil intensity <output id="cardFoilOutput">10%</output><input id="cardFoilIntensity" type="range" min="0" max="100" value="10" /></label>
-            <button class="card-refresh" type="button">Capture center view</button>
             <button class="card-export" type="button">Export 3000 × 4200 PNG</button>
             <p class="card-studio-status" role="status"></p>
             <p class="card-inspiration">Generative backgrounds powered by <a href="https://github.com/enonforetsam/fluid" target="_blank" rel="noopener noreferrer">Fluid</a>. Holographic interaction inspired by <a href="https://github.com/simeydotme/pokemon-cards-css" target="_blank" rel="noopener noreferrer">pokemon-cards-css</a>.</p>
@@ -100,7 +98,6 @@ export class CardStudio {
       this.root.querySelector(`#${id}`).addEventListener("input", () => this.syncPreview());
     });
     this.root.querySelector("#cardBackgroundFile").addEventListener("change", (event) => this.loadCustomBackground(event));
-    this.root.querySelector(".card-refresh").addEventListener("click", () => this.captureArtwork());
     this.root.querySelector(".card-export").addEventListener("click", () => this.exportCard());
     this.card.addEventListener("pointerenter", () => this.card.classList.add("interacting"));
     this.card.addEventListener("pointermove", (event) => this.onPointerMove(event));
@@ -158,8 +155,6 @@ export class CardStudio {
   }
 
   async captureArtwork() {
-    const button = this.root.querySelector(".card-refresh");
-    button.disabled = true;
     this.setStatus("Capturing the center viewport camera…");
     try {
       const capturedBlob = await this.editor.captureViewportFrame(1560, 1400);
@@ -168,11 +163,9 @@ export class CardStudio {
       this.artworkUrl = URL.createObjectURL(blob);
       this.artwork.src = this.artworkUrl;
       await this.artwork.decode();
-      this.setStatus("Avatar fitted edge-to-edge.", "success");
+      this.setStatus("");
     } catch (error) {
       this.setStatus(error.message || "The avatar could not be captured.", "error");
-    } finally {
-      button.disabled = false;
     }
   }
 
