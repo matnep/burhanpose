@@ -89,7 +89,11 @@ if (production) {
   app.use(express.static("dist"));
   app.get("/{*splat}", (_request, response) => response.sendFile("index.html", { root: "dist" }));
 } else {
-  const vite = await createViteServer({ server: { middlewareMode: true }, appType: "spa" });
+  const vite = await createViteServer({
+    server: { middlewareMode: true },
+    optimizeDeps: { exclude: ["three", "fluid-core"] },
+    appType: "spa",
+  });
   app.use(vite.middlewares);
 }
 

@@ -79,6 +79,7 @@ export class BurhanPoseEditor {
     this.future = [];
     this.poseRootOverride = false;
     this.exporting = false;
+    this.renderingPaused = false;
     this.background = new THREE.Color("#111512");
     this.raycaster = new THREE.Raycaster();
     this.pointer = new THREE.Vector2();
@@ -807,6 +808,11 @@ export class BurhanPoseEditor {
     this.updateOrthographicProjection(aspect);
   }
 
+  setRenderingPaused(paused) {
+    this.renderingPaused = Boolean(paused);
+    if (!this.renderingPaused && !this.exporting) this.renderer.render(this.scene, this.camera);
+  }
+
   updateOrthographicProjection(aspect = this.container.clientWidth / Math.max(this.container.clientHeight, 1)) {
     const halfHeight = this.orthographicHeight / 2;
     this.orthographicCamera.left = -halfHeight * aspect;
@@ -818,6 +824,7 @@ export class BurhanPoseEditor {
 
   animate = (time = performance.now()) => {
     requestAnimationFrame(this.animate);
+    if (this.renderingPaused || document.hidden) return;
     if (this.cameraTransition) {
       const transition = this.cameraTransition;
       const t = Math.min((time - transition.start) / transition.duration, 1);

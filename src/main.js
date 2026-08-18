@@ -1,7 +1,6 @@
 import "@fontsource-variable/geist-mono";
 import "./style.css";
 import { BurhanPoseEditor, POSES } from "./pose-editor.js";
-import { CardStudio } from "./card-studio.js";
 
 const icon = (name) => {
   const paths = {
@@ -50,12 +49,11 @@ document.querySelector("#app").innerHTML = `
     <header class="topbar">
       <a class="brand" href="#" aria-label="burhanpose home">
         <img class="brand-logo" src="/burhan-logo.png" alt="" />
-        <span>burhan<span>pose</span></span>
+        <span class="brand-name">burhan<span>pose</span></span><small class="beta-badge">Beta</small>
       </a>
       <div class="document-name">
         <span class="status-dot"></span>
         <span id="documentName">Untitled pose</span>
-        <small>Saved locally</small>
       </div>
       <div class="top-actions">
         <button class="icon-button" id="undoButton" title="Undo (Ctrl+Z)">${icon("undo")}</button>
@@ -75,7 +73,7 @@ document.querySelector("#app").innerHTML = `
 
     <main class="workspace">
       <aside class="panel left-panel">
-        <section class="panel-section import-section">
+        <section class="panel-section import-section" data-mobile-panel="character">
           <div class="section-heading"><span>Character</span><span class="step-label">01</span></div>
           <div class="avatar-list" id="avatarList"></div>
           <button class="add-avatar-button" id="addAvatarButton">${icon("plus")} Add avatar</button>
@@ -92,14 +90,14 @@ document.querySelector("#app").innerHTML = `
           <p class="inline-message" id="importMessage" role="status"></p>
         </section>
 
-        <section class="panel-section poses-section">
+        <section class="panel-section poses-section" data-mobile-panel="pose">
           <div class="section-heading"><span>Pose presets</span><span class="step-label">02</span></div>
           <div class="pose-grid" id="poseGrid">
             ${Object.entries(POSES).map(([key, pose], index) => `<button data-pose="${key}" class="${index === 0 ? "active" : ""}"><span class="pose-figure pose-${key}">${poseIcon(key)}</span><span>${pose.label}</span></button>`).join("")}
           </div>
         </section>
 
-        <section class="panel-section layers-section">
+        <section class="panel-section layers-section" data-mobile-panel="pose">
           <div class="section-heading"><span>Skin layers</span><span class="step-label">03</span></div>
           <div class="toggle-row layer-toggle"><span><strong>Outer layer</strong><small>Hat, jacket & sleeves</small></span><label class="switch"><input id="outerLayerToggle" type="checkbox" checked><i></i></label></div>
           <div class="toggle-row layer-toggle"><span><strong>3D skin layers</strong><small>Extrude visible outer pixels</small></span><label class="switch"><input id="skinLayers3dToggle" type="checkbox"><i></i></label></div>
@@ -122,7 +120,7 @@ document.querySelector("#app").innerHTML = `
       </section>
 
       <aside class="panel right-panel">
-        <section class="panel-section inspector-section">
+        <section class="panel-section inspector-section" data-mobile-panel="transform">
           <div class="section-heading"><span>Transform</span><span class="selected-chip" id="selectedChip">Head</span></div>
           <div class="transform-targets">
             <button class="active" id="partTargetButton">Selected part</button>
@@ -156,7 +154,7 @@ document.querySelector("#app").innerHTML = `
           </div>
         </section>
 
-        <section class="panel-section scene-section">
+        <section class="panel-section scene-section" data-mobile-panel="scene">
           <div class="section-heading"><span>Scene</span><span class="step-label">04</span></div>
           <div class="color-setting">
             <div><strong>Background</strong><small>Canvas color</small></div>
@@ -165,7 +163,7 @@ document.querySelector("#app").innerHTML = `
           <div class="slider-setting"><div><strong>Light direction</strong><output id="lightOutput">35°</output></div><input id="lightDirection" type="range" min="-180" max="180" value="35"></div>
         </section>
 
-        <section class="panel-section camera-section">
+        <section class="panel-section camera-section" data-mobile-panel="scene">
           <div class="section-heading"><span>Camera</span><span class="step-label">05</span></div>
           <div class="camera-presets">
             <button data-camera="front">Front</button><button data-camera="three-quarter" class="active">3/4</button><button data-camera="profile">Profile</button><button data-camera="isometric">Isometric</button>
@@ -173,12 +171,19 @@ document.querySelector("#app").innerHTML = `
           <div class="slider-setting"><div><strong>Field of view</strong><output id="fovOutput">35°</output></div><input id="fovSlider" type="range" min="20" max="70" value="35"></div>
         </section>
 
-        <section class="panel-section card-launch-section">
+        <section class="panel-section card-launch-section" data-mobile-panel="card">
           <div class="section-heading"><span>Card studio</span><span class="step-label">06</span></div>
           <p class="card-launch-copy">Use the center viewport as your camera, then turn its composition into a holographic player card.</p>
           <button class="card-launch-button" id="openCardStudioButton">${icon("sparkles")} Create player card</button>
         </section>
       </aside>
+      <nav class="mobile-panel-tabs" aria-label="Editor controls">
+        <button class="active" data-mobile-tab="character">Character</button>
+        <button data-mobile-tab="pose">Pose</button>
+        <button data-mobile-tab="transform">Transform</button>
+        <button data-mobile-tab="scene">Scene</button>
+        <button data-mobile-tab="card">Card</button>
+      </nav>
     </main>
     <footer class="statusbar">
       <span>developed by Matnepp from burhanbistro&lt;3</span>
@@ -188,6 +193,19 @@ document.querySelector("#app").innerHTML = `
 `;
 
 const $ = (selector) => document.querySelector(selector);
+
+function activateMobilePanel(name) {
+  document.querySelectorAll("[data-mobile-tab]").forEach((button) => button.classList.toggle("active", button.dataset.mobileTab === name));
+  document.querySelectorAll("[data-mobile-panel]").forEach((section) => section.classList.toggle("mobile-active", section.dataset.mobilePanel === name));
+  document.querySelectorAll(".panel").forEach((panel) => panel.classList.toggle("mobile-empty", !panel.querySelector(".mobile-active")));
+}
+
+document.querySelector(".mobile-panel-tabs").addEventListener("click", (event) => {
+  const button = event.target.closest("[data-mobile-tab]");
+  if (button) activateMobilePanel(button.dataset.mobileTab);
+});
+activateMobilePanel("character");
+
 const rotationInputs = ["x", "y", "z"].map((axis) => ({
   axis,
   range: $(`#rotation-${axis}`),
@@ -235,15 +253,20 @@ editor = new BurhanPoseEditor($("#viewport"), {
   },
 }, { name:defaultAvatarName, source:"Loading Minecraft profile…" });
 
-const cardStudio = new CardStudio({
-  editor,
-  getMetadata: () => ({
+let cardStudio = null;
+const getCardMetadata = () => ({
     name: activeAvatarSnapshot?.name || "PLAYER",
     model: activeAvatarSnapshot?.model || "classic",
     pose: activePoseLabel,
     layers3d: $("#skinLayers3dToggle").checked && $("#outerLayerToggle").checked,
-  }),
 });
+
+async function getCardStudio() {
+  if (cardStudio) return cardStudio;
+  const { CardStudio } = await import("./card-studio.js");
+  cardStudio = new CardStudio({ editor, getMetadata:getCardMetadata });
+  return cardStudio;
+}
 
 function renderAvatarList(avatars) {
   $("#avatarList").innerHTML = avatars.map((avatar) => `
@@ -456,7 +479,8 @@ $("#openCardStudioButton").addEventListener("click", async () => {
   button.disabled = true;
   button.innerHTML = `${icon("sparkles")} Capturing pose…`;
   try {
-    await cardStudio.open();
+    const studio = await getCardStudio();
+    await studio.open();
   } finally {
     button.disabled = false;
     button.innerHTML = `${icon("sparkles")} Create player card`;

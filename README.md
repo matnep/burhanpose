@@ -1,6 +1,6 @@
-# BurhanPose
+# burhanpose
 
-BurhanPose 1.0.0 is a focused, browser-based Minecraft character posing and rendering studio. Import a Java Edition skin, arrange one or more avatars, and export the scene as a transparent PNG—without skin painting or animation timelines.
+burhanpose 1.0.0 is a focused, browser-based Minecraft character posing and rendering studio. Import a Java Edition skin, arrange one or more avatars, and export the scene as a transparent PNG—without skin painting or animation timelines.
 
 ## Features
 
@@ -16,7 +16,7 @@ BurhanPose 1.0.0 is a focused, browser-based Minecraft character posing and rend
 - Avatar height controls and floor placement
 - Dark Geist Mono interface
 - Transparent scene export at 1K, 2K, or 4K
-- Card Studio · 06 with center-viewport camera capture, layered interactive holographic foil, and 3000×4200 PNG export
+- Card Studio · 06 with center-viewport camera capture, Fluid-powered generative or custom-uploaded backgrounds, layered interactive holographic foil, and 3000×4200 PNG export
 
 ## Run locally
 
@@ -36,7 +36,7 @@ npm start
 
 ## Deploy to Cloudflare
 
-BurhanPose deploys as one Cloudflare Worker containing both the Vite frontend and the Minecraft skin API.
+burhanpose deploys as one Cloudflare Worker containing both the Vite frontend and the Minecraft skin API.
 
 ```bash
 npm run deploy
@@ -48,6 +48,8 @@ Skin lookup is performed by the same-origin Node server locally and by the Worke
 
 ## Credits
 
-The optional 3D outer-layer mode is inspired by [3D Skin Layers by tr7zw](https://github.com/tr7zw/3d-skin-layers). BurhanPose uses its own browser-oriented voxel geometry implementation.
+The optional 3D outer-layer mode is inspired by [3D Skin Layers by tr7zw](https://github.com/tr7zw/3d-skin-layers). burhanpose uses its own browser-oriented voxel geometry implementation.
 
-The Card Studio holographic interaction is visually inspired by [pokemon-cards-css by simeydotme](https://github.com/simeydotme/pokemon-cards-css). BurhanPose's card design, CSS, and canvas renderer are original implementations.
+The Card Studio holographic interaction is visually inspired by [pokemon-cards-css by simeydotme](https://github.com/simeydotme/pokemon-cards-css). burhanpose's card design, CSS, and canvas renderer are original implementations.
+
+Card Studio generative backgrounds use the curated look data and adapted low-power Canvas 2D fallback from the MIT-licensed [Fluid](https://github.com/enonforetsam/fluid) project. This avoids running a second WebGL context beside the Three.js avatar editor.
