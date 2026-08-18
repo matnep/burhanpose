@@ -9,9 +9,13 @@ const JOINT_GAP = 0;
 const OUTER_LAYER_TOTAL = 0.0625;
 const VOXEL_LAYER_DEPTH = 0.0625;
 const OUTER_LAYER_SIDE = OUTER_LAYER_TOTAL / 2;
+// Keep transparent shell faces off the exact depth plane of the base skin.
+// The inset is far below one skin pixel, but prevents MSAA from resolving a
+// nearly edge-on coplanar face as a dotted one-pixel seam at extreme zoom.
+const OUTER_LAYER_DEPTH_EPSILON = 0.002;
 const JOINT_TRIM = JOINT_GAP / 2;
 const LIMB_OUTER_EXPANSION = OUTER_LAYER_SIDE - JOINT_TRIM;
-const LIMB_OUTER_OFFSET = (OUTER_LAYER_SIDE + JOINT_TRIM) / 2;
+const LIMB_OUTER_OFFSET = (OUTER_LAYER_SIDE + JOINT_TRIM) / 2 + OUTER_LAYER_DEPTH_EPSILON;
 
 export const POSES = {
   idle: { label: "Idle", parts: { torso: [0, -3, 2], head: [-2, 5, -2], leftArm: [4, -2, -5], rightArm: [-3, 2, 4], leftLeg: [2, 0, -2], rightLeg: [-2, 0, 2] } },
@@ -267,7 +271,9 @@ export class BurhanPoseEditor {
     this.scene.add(this.character);
 
     this.makePart("torso", [1, 1.5, 0.5], [0, 3, 0], [0, -0.75, 0], UV.torso, UV.torsoOuter, {
-      expansion: [JOINT_GAP, JOINT_GAP, OUTER_LAYER_TOTAL],
+      // Expand the visible side faces while recessing the joint-facing top
+      // and bottom faces. This avoids both z-fighting and joint overlap.
+      expansion: [OUTER_LAYER_DEPTH_EPSILON * 2, -OUTER_LAYER_DEPTH_EPSILON * 2, OUTER_LAYER_TOTAL],
     });
     this.makePart("head", [1, 1, 1], [0, 3 + JOINT_GAP, 0], [0, 0.5, 0], UV.head, UV.headOuter, {
       expansion: [0.125, 0.125, 0.125],
@@ -348,17 +354,16 @@ export class BurhanPoseEditor {
       // Base skin pixels are opaque, while hats/jackets/sleeves/trousers may
       // contain genuinely translucent pixels (for example tinted glasses).
       transparent,
-      alphaTest: transparent ? 0.001 : 0,
+      // Discard only near-invisible PNG noise before it becomes a subpixel
+      // fringe. Deliberate translucent pixels remain blended normally.
+      alphaTest: transparent ? 0.05 : 0,
       depthWrite: true,
       roughness: 0.82,
       metalness: 0,
       side: THREE.FrontSide,
-      // The torso shell is intentionally flush on joint-facing axes. Bias its
-      // fragments toward the camera so those coincident shell/base faces do
-      // not flicker while adjacent parts remain geometrically disjoint.
-      polygonOffset: transparent,
-      polygonOffsetFactor: transparent ? -1 : 0,
-      polygonOffsetUnits: transparent ? -1 : 0,
+      // Shell geometry is physically separated from the base mesh, so a
+      // camera-dependent polygon depth bias is neither needed nor desirable.
+      polygonOffset: false,
     });
     material.userData.baseEmissive = new THREE.Color(0x000000);
     return new THREE.Mesh(geometry, material);
