@@ -30,6 +30,8 @@ export class CardStudio {
     this.lastFluidFrame = 0;
     this.pointerAnimationFrame = null;
     this.pendingPointer = null;
+    this.artPosition = { x:0, y:0 };
+    this.artDrag = null;
     this.pointer = { x:0.62, y:0.28 };
     this.root = document.createElement("div");
     this.root.className = "card-studio-modal hidden";
@@ -54,7 +56,7 @@ export class CardStudio {
                 </div>
               </article>
             </div>
-            <p>The center viewport is your card camera. Move across the card to inspect the foil.</p>
+            <p>Drag the avatar to reposition · Scroll to zoom · Double-click to center</p>
           </div>
           <form class="card-controls" onsubmit="return false">
             <label>Player name<input id="cardName" maxlength="16" /></label>
@@ -69,7 +71,7 @@ export class CardStudio {
               <label class="card-background-upload" for="cardBackgroundFile">Upload your image</label>
               <input id="cardBackgroundFile" type="file" accept="image/png,image/jpeg,image/webp" hidden />
             </div>
-            <label>Artwork scale <output id="cardScaleOutput">100%</output><input id="cardScale" type="range" min="75" max="125" value="100" /></label>
+            <label>Artwork scale <output id="cardScaleOutput">100%</output><input id="cardScale" type="range" min="60" max="200" value="100" /></label>
             <label>Foil intensity <output id="cardFoilOutput">10%</output><input id="cardFoilIntensity" type="range" min="0" max="100" value="10" /></label>
             <button class="card-refresh" type="button">Capture center view</button>
             <button class="card-export" type="button">Export 3000 × 4200 PNG</button>
@@ -80,6 +82,7 @@ export class CardStudio {
       </div>`;
     document.body.appendChild(this.root);
     this.card = this.root.querySelector(".bp-player-card");
+    this.artworkFrame = this.root.querySelector(".card-artwork");
     this.artwork = this.root.querySelector(".card-artwork img");
     this.background = this.root.querySelector(".card-art-background");
     this.fluidCanvas = document.createElement("canvas");
@@ -102,6 +105,15 @@ export class CardStudio {
     this.card.addEventListener("pointerenter", () => this.card.classList.add("interacting"));
     this.card.addEventListener("pointermove", (event) => this.onPointerMove(event));
     this.card.addEventListener("pointerleave", () => { this.card.classList.remove("interacting"); this.setPointer(0.5, 0.5); });
+    this.artworkFrame.addEventListener("pointerdown", (event) => this.onArtworkPointerDown(event));
+    this.artworkFrame.addEventListener("pointermove", (event) => this.onArtworkPointerMove(event));
+    this.artworkFrame.addEventListener("pointerup", (event) => this.onArtworkPointerUp(event));
+    this.artworkFrame.addEventListener("pointercancel", (event) => this.onArtworkPointerUp(event));
+    this.artworkFrame.addEventListener("wheel", (event) => this.onArtworkWheel(event), { passive:false });
+    this.artworkFrame.addEventListener("dblclick", (event) => {
+      event.stopPropagation();
+      this.setArtworkPosition(0, 0);
+    });
   }
 
   async loadCustomBackground(event) {
@@ -171,6 +183,8 @@ export class CardStudio {
     this.card.dataset.foil = state.foil;
     this.card.style.setProperty("--foil-opacity", state.foilIntensity);
     this.card.style.setProperty("--art-scale", state.scale);
+    this.card.style.setProperty("--art-x", `${state.artX * 100}%`);
+    this.card.style.setProperty("--art-y", `${state.artY * 100}%`);
     this.syncBackground(state.background, state.theme);
     this.root.querySelector(".card-player-name").textContent = state.name || "PLAYER";
     this.root.querySelector(".card-player-title").textContent = state.title || "POSE MASTER";
@@ -192,6 +206,8 @@ export class CardStudio {
       foil: this.root.querySelector("#cardFoil").value,
       background: this.root.querySelector("#cardBackground").value,
       scale: Number(this.root.querySelector("#cardScale").value) / 100,
+      artX: this.artPosition.x,
+      artY: this.artPosition.y,
       foilIntensity: Number(this.root.querySelector("#cardFoilIntensity").value) / 100,
     };
   }
@@ -258,6 +274,52 @@ export class CardStudio {
       this.setPointer(this.pendingPointer[0], this.pendingPointer[1]);
       this.pendingPointer = null;
     });
+  }
+
+  onArtworkPointerDown(event) {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    this.artworkFrame.setPointerCapture(event.pointerId);
+    this.artworkFrame.classList.add("dragging");
+    this.artDrag = { pointerId:event.pointerId, x:event.clientX, y:event.clientY, originX:this.artPosition.x, originY:this.artPosition.y };
+  }
+
+  onArtworkPointerMove(event) {
+    if (!this.artDrag || event.pointerId !== this.artDrag.pointerId) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const bounds = this.artworkFrame.getBoundingClientRect();
+    this.setArtworkPosition(
+      this.artDrag.originX + (event.clientX - this.artDrag.x) / Math.max(bounds.width, 1),
+      this.artDrag.originY + (event.clientY - this.artDrag.y) / Math.max(bounds.height, 1),
+    );
+  }
+
+  onArtworkPointerUp(event) {
+    if (!this.artDrag || event.pointerId !== this.artDrag.pointerId) return;
+    event.stopPropagation();
+    if (this.artworkFrame.hasPointerCapture(event.pointerId)) this.artworkFrame.releasePointerCapture(event.pointerId);
+    this.artworkFrame.classList.remove("dragging");
+    this.artDrag = null;
+  }
+
+  onArtworkWheel(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    const slider = this.root.querySelector("#cardScale");
+    const current = Number(slider.value);
+    const next = Math.min(Number(slider.max), Math.max(Number(slider.min), Math.round(current * Math.exp(-event.deltaY * 0.0015))));
+    if (next === current) return;
+    slider.value = String(next);
+    this.syncPreview();
+  }
+
+  setArtworkPosition(x, y) {
+    this.artPosition.x = Math.max(-0.85, Math.min(0.85, x));
+    this.artPosition.y = Math.max(-0.85, Math.min(0.85, y));
+    this.card.style.setProperty("--art-x", `${this.artPosition.x * 100}%`);
+    this.card.style.setProperty("--art-y", `${this.artPosition.y * 100}%`);
   }
 
   setPointer(x, y) {
@@ -457,7 +519,7 @@ async function renderCardPng({ state, metadata, artworkUrl, backgroundUrl, point
   const artwork = await loadCanvasImage(artworkUrl);
   const background = backgroundUrl ? await loadCanvasImage(backgroundUrl) : null;
   drawCardBase(context, theme);
-  drawArtwork(context, artwork, background, theme, state.scale);
+  drawArtwork(context, artwork, background, theme, state);
   if (state.foil !== "none" && state.foilIntensity > 0) drawFoil(context, state.foil, state.foilIntensity, pointer);
   drawCardTypography(context, state, metadata, theme);
   return new Promise((resolve, reject) => canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error("The browser could not encode the card PNG.")), "image/png"));
@@ -480,7 +542,7 @@ function drawCardBase(context, theme) {
   context.restore();
 }
 
-function drawArtwork(context, artwork, backgroundImage, theme, artworkScale) {
+function drawArtwork(context, artwork, backgroundImage, theme, state) {
   const x = 132, y = 370, width = 1236, height = 1110;
   context.save(); roundedRect(context, x, y, width, height, 58); context.clip();
   const backdrop = context.createRadialGradient(800, 780, 60, 750, 900, 820);
@@ -493,9 +555,9 @@ function drawArtwork(context, artwork, backgroundImage, theme, artworkScale) {
     context.fillStyle = shade; context.fillRect(x, y, width, height);
   }
   context.globalAlpha = 1;
-  const drawWidth = width * artworkScale;
-  const drawHeight = height * artworkScale;
-  context.drawImage(artwork, x + width / 2 - drawWidth / 2, y + height - drawHeight, drawWidth, drawHeight);
+  const drawWidth = width * state.scale;
+  const drawHeight = height * state.scale;
+  context.drawImage(artwork, x + width / 2 - drawWidth / 2 + state.artX * width, y + height - drawHeight + state.artY * height, drawWidth, drawHeight);
   context.restore();
   context.strokeStyle = theme.accent; context.lineWidth = 8; roundedRect(context, x, y, width, height, 58); context.stroke();
 }
