@@ -268,14 +268,42 @@ async function getCardStudio() {
 }
 
 function renderAvatarList(avatars) {
-  $("#avatarList").innerHTML = avatars.map((avatar) => `
-    <div class="skin-card ${avatar.active ? "active" : ""}" data-avatar-id="${avatar.id}">
-      <button class="avatar-select" aria-label="Select ${avatar.name}">
-        <span class="skin-avatar"><img alt="${avatar.name} skin face" src="${avatar.preview}" /></span>
-        <span class="skin-meta"><strong>${avatar.name}</strong><small>${avatar.source}</small></span>
-      </button>
-      <button class="avatar-delete" data-delete-avatar="${avatar.id}" aria-label="Delete ${avatar.name}" title="Delete avatar" ${avatars.length === 1 ? "disabled" : ""}>${icon("trash")}</button>
-    </div>`).join("");
+  const list = $("#avatarList");
+  const fragment = document.createDocumentFragment();
+  avatars.forEach((avatar) => {
+    const card = document.createElement("div");
+    card.className = `skin-card ${avatar.active ? "active" : ""}`;
+    card.dataset.avatarId = avatar.id;
+
+    const select = document.createElement("button");
+    select.className = "avatar-select";
+    select.setAttribute("aria-label", `Select ${avatar.name}`);
+    const face = document.createElement("span");
+    face.className = "skin-avatar";
+    const image = document.createElement("img");
+    image.alt = `${avatar.name} skin face`;
+    image.src = avatar.preview;
+    face.appendChild(image);
+    const meta = document.createElement("span");
+    meta.className = "skin-meta";
+    const name = document.createElement("strong");
+    name.textContent = avatar.name;
+    const source = document.createElement("small");
+    source.textContent = avatar.source;
+    meta.append(name, source);
+    select.append(face, meta);
+
+    const remove = document.createElement("button");
+    remove.className = "avatar-delete";
+    remove.dataset.deleteAvatar = avatar.id;
+    remove.setAttribute("aria-label", `Delete ${avatar.name}`);
+    remove.title = "Delete avatar";
+    remove.disabled = avatars.length === 1;
+    remove.innerHTML = icon("trash");
+    card.append(select, remove);
+    fragment.appendChild(card);
+  });
+  list.replaceChildren(fragment);
 }
 function updateRotationInputs(rotation) {
   updatingInputs = true;
@@ -364,7 +392,7 @@ function profileCandidates(preferred) {
 
 async function loadApprovedSkin(preferred) {
   for (const username of profileCandidates(preferred)) {
-    editor.setAvatarIdentity(username, "Loading Minecraft profile…");
+    editor.setAvatarIdentity(username, "Loading Minecraft profile…", false);
     try {
       const result = await editor.loadSkinUsername(username);
       setSkinIdentity(result.name, `Minecraft profile · ${result.model}`);
@@ -374,7 +402,7 @@ async function loadApprovedSkin(preferred) {
       // Try another approved default when a profile service is temporarily unavailable.
     }
   }
-  editor.setAvatarIdentity(preferred, "Profile temporarily unavailable");
+  editor.setAvatarIdentity(preferred, "Profile temporarily unavailable", false);
   return false;
 }
 

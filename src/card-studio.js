@@ -150,6 +150,11 @@ export class CardStudio {
     if (this.pointerAnimationFrame) cancelAnimationFrame(this.pointerAnimationFrame);
     this.pointerAnimationFrame = null;
     this.pendingPointer = null;
+    if (this.artworkUrl) URL.revokeObjectURL(this.artworkUrl);
+    this.artworkUrl = null;
+    this.artwork.removeAttribute("src");
+    this.fluidCanvas.width = 1;
+    this.fluidCanvas.height = 1;
     this.editor.setRenderingPaused?.(false);
     this.setPointer(0.5, 0.5);
   }
@@ -162,7 +167,8 @@ export class CardStudio {
       if (this.artworkUrl) URL.revokeObjectURL(this.artworkUrl);
       this.artworkUrl = URL.createObjectURL(blob);
       this.artwork.src = this.artworkUrl;
-      await this.artwork.decode();
+      if (typeof this.artwork.decode === "function") await this.artwork.decode();
+      else if (!this.artwork.complete) await waitForImage(this.artwork);
       this.setStatus("");
     } catch (error) {
       this.setStatus(error.message || "The avatar could not be captured.", "error");
@@ -369,7 +375,7 @@ export class CardStudio {
 }
 
 async function fitVisiblePixelsToFrame(blob) {
-  const bitmap = await createImageBitmap(blob);
+  const bitmap = await loadBlobImage(blob);
   const canvas = document.createElement("canvas");
   canvas.width = bitmap.width;
   canvas.height = bitmap.height;
@@ -389,9 +395,9 @@ async function fitVisiblePixelsToFrame(blob) {
   const rowThreshold = Math.max(8, Math.floor(canvas.width * 0.006));
   const columnThreshold = Math.max(8, Math.floor(canvas.height * 0.006));
   const top = rowCoverage.findIndex((count) => count >= rowThreshold);
-  const bottom = rowCoverage.findLastIndex((count) => count >= rowThreshold);
+  const bottom = findLastMatchingIndex(rowCoverage, (count) => count >= rowThreshold);
   const left = columnCoverage.findIndex((count) => count >= columnThreshold);
-  const right = columnCoverage.findLastIndex((count) => count >= columnThreshold);
+  const right = findLastMatchingIndex(columnCoverage, (count) => count >= columnThreshold);
   context.clearRect(0, 0, canvas.width, canvas.height);
   if (top >= 0 && bottom >= top && left >= 0 && right >= left) {
     const sourceWidth = right - left + 1;
@@ -404,8 +410,7 @@ async function fitVisiblePixelsToFrame(blob) {
   } else {
     context.drawImage(bitmap, 0, 0);
   }
-  bitmap.close();
-  return new Promise((resolve, reject) => canvas.toBlob((result) => result ? resolve(result) : reject(new Error("The avatar cutout could not be prepared.")), "image/png"));
+  return canvasToBlobAndRelease(canvas, "The avatar cutout could not be prepared.");
 }
 
 // Adapted from Fluid's MIT-licensed canvas-only low-power renderer. It uses
@@ -515,7 +520,7 @@ async function renderCardPng({ state, metadata, artworkUrl, backgroundUrl, point
   drawArtwork(context, artwork, background, theme, state);
   if (state.foil !== "none" && state.foilIntensity > 0) drawFoil(context, state.foil, state.foilIntensity, pointer);
   drawCardTypography(context, state, metadata, theme);
-  return new Promise((resolve, reject) => canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error("The browser could not encode the card PNG.")), "image/png"));
+  return canvasToBlobAndRelease(canvas, "The browser could not encode the card PNG.");
 }
 
 function drawCardBase(context, theme) {
@@ -621,7 +626,14 @@ function drawCardTypography(context, state, metadata, theme) {
 }
 
 function roundedRect(context, x, y, width, height, radius) {
-  context.beginPath(); context.roundRect(x, y, width, height, radius);
+  const safeRadius = Math.min(radius, width / 2, height / 2);
+  context.beginPath();
+  context.moveTo(x + safeRadius, y);
+  context.arcTo(x + width, y, x + width, y + height, safeRadius);
+  context.arcTo(x + width, y + height, x, y + height, safeRadius);
+  context.arcTo(x, y + height, x, y, safeRadius);
+  context.arcTo(x, y, x + width, y, safeRadius);
+  context.closePath();
 }
 
 function fitText(context, text, x, y, maxWidth, startSize) {
@@ -632,6 +644,38 @@ function fitText(context, text, x, y, maxWidth, startSize) {
 
 function loadCanvasImage(url) {
   return new Promise((resolve, reject) => { const image = new Image(); image.onload = () => resolve(image); image.onerror = () => reject(new Error("The captured avatar could not be loaded.")); image.src = url; });
+}
+
+function waitForImage(image) {
+  return new Promise((resolve, reject) => {
+    image.addEventListener("load", resolve, { once:true });
+    image.addEventListener("error", () => reject(new Error("The captured avatar could not be loaded.")), { once:true });
+  });
+}
+
+async function loadBlobImage(blob) {
+  const url = URL.createObjectURL(blob);
+  try {
+    return await loadCanvasImage(url);
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+function findLastMatchingIndex(values, predicate) {
+  for (let index = values.length - 1; index >= 0; index -= 1) {
+    if (predicate(values[index], index)) return index;
+  }
+  return -1;
+}
+
+function canvasToBlobAndRelease(canvas, errorMessage) {
+  return new Promise((resolve, reject) => canvas.toBlob((blob) => {
+    canvas.width = 1;
+    canvas.height = 1;
+    if (blob) resolve(blob);
+    else reject(new Error(errorMessage));
+  }, "image/png"));
 }
 
 function safeFilename(value) {

@@ -2,6 +2,12 @@ const NO_CACHE_HEADERS = {
   "Cache-Control": "no-store, no-cache, must-revalidate",
   Pragma: "no-cache",
 };
+const SKIN_CACHE_HEADERS = {
+  "Cache-Control": "public, max-age=30, s-maxage=30",
+};
+const SKIN_CACHE_TTL = 30_000;
+const SKIN_CACHE_LIMIT = 100;
+const skinCache = new Map();
 const JSON_HEADERS = {
   "Content-Type": "application/json; charset=utf-8",
   ...NO_CACHE_HEADERS,
@@ -51,11 +57,10 @@ function decodeTexturePayload(encodedTextures) {
 }
 
 async function fetchFallbackSkin(username, uuid) {
-  const refresh = Date.now();
   const mirrors = [
-    { name: "Minotar", url: `https://minotar.net/skin/${encodeURIComponent(username)}?refresh=${refresh}` },
-    ...(uuid ? [{ name: "Visage", url: `https://visage.surgeplay.com/skin/${uuid}?refresh=${refresh}` }] : []),
-    { name: "MineSkin", url: `https://mineskin.eu/skin/${encodeURIComponent(username)}?refresh=${refresh}` },
+    { name: "Minotar", url: `https://minotar.net/skin/${encodeURIComponent(username)}` },
+    ...(uuid ? [{ name: "Visage", url: `https://visage.surgeplay.com/skin/${uuid}` }] : []),
+    { name: "MineSkin", url: `https://mineskin.eu/skin/${encodeURIComponent(username)}` },
   ];
 
   for (const mirror of mirrors) {
@@ -70,7 +75,7 @@ async function fetchFallbackSkin(username, uuid) {
       return new Response(textureResponse.body, {
         headers: {
           "Content-Type": "image/png",
-          ...NO_CACHE_HEADERS,
+          ...SKIN_CACHE_HEADERS,
           "X-Player-Name": username,
           "X-Skin-Source": mirror.name,
         },
@@ -101,7 +106,7 @@ async function fetchFallbackSkin(username, uuid) {
         return new Response(textureResponse.body, {
           headers: {
             "Content-Type": textureResponse.headers.get("content-type") || "image/png",
-            ...NO_CACHE_HEADERS,
+            ...SKIN_CACHE_HEADERS,
             "X-Skin-Model": skin.metadata?.model === "slim" ? "slim" : "classic",
             "X-Player-Name": player.username || username,
             "X-Skin-Source": "PlayerDB",
@@ -129,14 +134,14 @@ async function fetchFallbackSkin(username, uuid) {
   return new Response(textureResponse.body, {
     headers: {
       "Content-Type": "image/png",
-      ...NO_CACHE_HEADERS,
+      ...SKIN_CACHE_HEADERS,
       "X-Player-Name": username,
       "X-Skin-Source": "MCHeads",
     },
   });
 }
 
-async function fetchSkin(username) {
+async function fetchSkinUncached(username) {
   if (!/^[A-Za-z0-9_]{1,16}$/.test(username)) {
     return json({ error: "Enter a valid Minecraft Java username." }, 400);
   }
@@ -168,7 +173,7 @@ async function fetchSkin(username) {
     return new Response(textureResponse.body, {
       headers: {
         "Content-Type": textureResponse.headers.get("content-type") || "image/png",
-        ...NO_CACHE_HEADERS,
+        ...SKIN_CACHE_HEADERS,
         "X-Skin-Model": skin.metadata?.model === "slim" ? "slim" : "classic",
         "X-Player-Name": identity.name,
         "X-Skin-Source": "Minecraft",
@@ -189,6 +194,23 @@ async function fetchSkin(username) {
       return json({ error: "Minecraft skin services are unavailable. Try uploading a PNG." }, 502);
     }
   }
+}
+
+export async function fetchSkin(username) {
+  if (!/^[A-Za-z0-9_]{1,16}$/.test(username)) {
+    return json({ error: "Enter a valid Minecraft Java username." }, 400);
+  }
+  const key = username.toLowerCase();
+  const cached = skinCache.get(key);
+  if (cached && cached.expires > Date.now()) return cached.response.clone();
+  if (cached) skinCache.delete(key);
+
+  const response = await fetchSkinUncached(username);
+  if (response.ok && (response.headers.get("content-type") || "").includes("image/png")) {
+    if (skinCache.size >= SKIN_CACHE_LIMIT) skinCache.delete(skinCache.keys().next().value);
+    skinCache.set(key, { expires:Date.now() + SKIN_CACHE_TTL, response:response.clone() });
+  }
+  return response;
 }
 
 export default {

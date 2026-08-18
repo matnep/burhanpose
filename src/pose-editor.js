@@ -84,6 +84,8 @@ export class BurhanPoseEditor {
     this.poseRootOverride = false;
     this.exporting = false;
     this.renderingPaused = false;
+    this.animationFrame = null;
+    this.needsRender = true;
     this.background = new THREE.Color("#111512");
     this.raycaster = new THREE.Raycaster();
     this.pointer = new THREE.Vector2();
@@ -112,6 +114,7 @@ export class BurhanPoseEditor {
     this.orbit.minDistance = 3.8;
     this.orbit.maxDistance = 14;
     this.orbit.maxPolarAngle = Math.PI * 0.94;
+    this.orbit.addEventListener("change", this.invalidate);
 
     this.scene.add(new THREE.HemisphereLight(0xffffff, 0x63705d, 2.1));
     this.keyLight = new THREE.DirectionalLight(0xffffff, 3.2);
@@ -136,7 +139,8 @@ export class BurhanPoseEditor {
     this.renderer.domElement.addEventListener("pointermove", (event) => this.onPointerMove(event));
     this.renderer.domElement.addEventListener("pointerup", () => this.onPointerUp());
     this.renderer.domElement.addEventListener("pointercancel", () => this.onPointerUp());
-    this.animate();
+    document.addEventListener("visibilitychange", this.onVisibilityChange);
+    this.invalidate();
     this.commitHistory();
   }
 
@@ -155,6 +159,8 @@ export class BurhanPoseEditor {
       history: [],
       future: [],
       selectedKey: "head",
+      skinRevision: 0,
+      preview: null,
     };
     this.avatars.push(avatar);
     this.activateAvatar(id, false);
@@ -215,15 +221,16 @@ export class BurhanPoseEditor {
       source: avatar.source,
       model: avatar.model,
       active: avatar === this.activeAvatar,
-      preview: this.getFacePreview(avatar.texture),
+      preview: avatar.preview || (avatar.preview = this.getFacePreview(avatar.texture)),
     })));
   }
 
-  setAvatarIdentity(name, source) {
+  setAvatarIdentity(name, source, record = true) {
     if (!this.activeAvatar) return;
     this.activeAvatar.name = name;
     this.activeAvatar.source = source;
     this.emitAvatarsChange();
+    if (record) this.commitHistory();
   }
 
   setInteractionMode(mode) {
@@ -398,6 +405,7 @@ export class BurhanPoseEditor {
     }));
     const selection = key === "avatar" ? { partKey:"avatar", label:"Whole avatar", isAvatar:true } : part.userData;
     this.callbacks.onSelectionChange?.(selection, this.getSelectedRotation());
+    this.invalidate();
   }
 
   onPointerDown(event) {
@@ -437,7 +445,7 @@ export class BurhanPoseEditor {
     const next = point.add(this.avatarDrag.offset);
     this.character.position.set(next.x, this.avatarDrag.height, next.z);
     this.emitAvatarHeight();
-    this.emitAvatarsChange();
+    this.invalidate();
   }
 
   onPointerUp() {
@@ -445,6 +453,7 @@ export class BurhanPoseEditor {
     this.avatarDrag = null;
     this.orbit.enabled = this.interactionMode !== "move";
     this.commitHistory();
+    this.emitAvatarsChange();
   }
 
   getSelectedRotation() {
@@ -459,6 +468,7 @@ export class BurhanPoseEditor {
     if (!part) return;
     part.rotation[axis] = THREE.MathUtils.clamp(degrees, -180, 180) * DEG;
     this.emitRotation();
+    this.invalidate();
   }
 
   resetSelectedPart() {
@@ -486,6 +496,7 @@ export class BurhanPoseEditor {
     });
     this.emitRotation();
     this.emitAvatarHeight();
+    this.invalidate();
     if (record) this.commitHistory();
   }
 
@@ -517,8 +528,10 @@ export class BurhanPoseEditor {
   }
 
   commitHistory() {
-    const state = JSON.stringify(this.getPose());
-    if (this.history.at(-1) === state) return;
+    if (!this.activeAvatar) return;
+    const state = this.captureHistoryState();
+    const previous = this.history[this.history.length - 1];
+    if (previous?.signature === state.signature) return;
     this.history.push(state);
     if (this.history.length > 60) this.history.shift();
     this.future.length = 0;
@@ -527,14 +540,50 @@ export class BurhanPoseEditor {
   undo() {
     if (this.history.length < 2) return;
     this.future.push(this.history.pop());
-    this.setPose(JSON.parse(this.history.at(-1)), false);
+    this.restoreHistoryState(this.history[this.history.length - 1]);
   }
 
   redo() {
     const state = this.future.pop();
     if (!state) return;
     this.history.push(state);
-    this.setPose(JSON.parse(state), false);
+    this.restoreHistoryState(state);
+  }
+
+  captureHistoryState() {
+    const avatar = this.activeAvatar;
+    const pose = this.getPose();
+    const state = {
+      pose,
+      model: avatar.model,
+      name: avatar.name,
+      source: avatar.source,
+      skinRevision: avatar.skinRevision,
+      sourceCanvas: avatar.texture.userData.sourceCanvas,
+    };
+    state.signature = JSON.stringify({ pose, model:state.model, name:state.name, source:state.source, skinRevision:state.skinRevision });
+    return state;
+  }
+
+  restoreHistoryState(state) {
+    if (!state || !this.activeAvatar) return;
+    const avatar = this.activeAvatar;
+    const rebuild = avatar.texture.userData.sourceCanvas !== state.sourceCanvas || avatar.model !== state.model;
+    avatar.name = state.name;
+    avatar.source = state.source;
+    avatar.model = state.model;
+    avatar.skinRevision = state.skinRevision;
+    if (rebuild) {
+      avatar.texture.dispose();
+      this.texture = this.textureFromCanvas(state.sourceCanvas);
+      this.model = state.model;
+      avatar.texture = this.texture;
+      avatar.preview = null;
+      this.buildCharacter();
+    }
+    this.setPose(state.pose, false);
+    this.selectPart(this.selectedKey || "head");
+    this.emitAvatarsChange();
   }
 
   async loadSkinFile(file) {
@@ -544,11 +593,7 @@ export class BurhanPoseEditor {
   }
 
   async loadSkinUsername(username) {
-    const refresh = Date.now();
-    const response = await fetch(`/api/skin/${encodeURIComponent(username)}?refresh=${refresh}`, {
-      cache: "no-store",
-      headers: { "Cache-Control": "no-cache" },
-    });
+    const response = await fetch(`/api/skin/${encodeURIComponent(username)}`);
     if (!response.ok) {
       const payload = await response.json().catch(() => ({}));
       throw new Error(payload.error || "Could not fetch this Minecraft skin.");
@@ -573,6 +618,8 @@ export class BurhanPoseEditor {
     this.model = model;
     this.activeAvatar.texture = this.texture;
     this.activeAvatar.model = model;
+    this.activeAvatar.skinRevision += 1;
+    this.activeAvatar.preview = null;
     const pose = this.getPose();
     this.buildCharacter();
     this.character.visible = true;
@@ -600,6 +647,7 @@ export class BurhanPoseEditor {
     this.buildCharacter();
     this.setPose(pose, false);
     this.emitAvatarsChange();
+    this.commitHistory();
   }
 
   setOuterLayer(visible) {
@@ -608,6 +656,7 @@ export class BurhanPoseEditor {
       avatar.outerMeshes.forEach((mesh) => { mesh.visible = visible && !this.skinLayers3d; });
       avatar.voxelMeshes.forEach((mesh) => { mesh.visible = visible && this.skinLayers3d; });
     });
+    this.invalidate();
   }
 
   set3dSkinLayers(enabled) {
@@ -616,15 +665,18 @@ export class BurhanPoseEditor {
       avatar.outerMeshes.forEach((mesh) => { mesh.visible = this.outerLayerVisible && !enabled; });
       avatar.voxelMeshes.forEach((mesh) => { mesh.visible = this.outerLayerVisible && enabled; });
     });
+    this.invalidate();
   }
-  setBackground(color) { this.background.set(color); this.scene.background = this.background; }
+  setBackground(color) { this.background.set(color); this.scene.background = this.background; this.invalidate(); }
   setLightDirection(degrees) {
     const radians = degrees * DEG;
     this.keyLight.position.set(Math.sin(radians) * 6, 7, Math.cos(radians) * 6);
+    this.invalidate();
   }
   setFov(value) {
     this.perspectiveCamera.fov = value;
     this.perspectiveCamera.updateProjectionMatrix();
+    this.invalidate();
   }
 
   emitAvatarHeight() { this.callbacks.onAvatarHeightChange?.(this.character?.position.y || 0); }
@@ -633,6 +685,7 @@ export class BurhanPoseEditor {
     if (!this.character) return;
     this.character.position.y = THREE.MathUtils.clamp(Number(value) || 0, -4, 4);
     this.emitAvatarHeight();
+    this.invalidate();
     if (record) this.commitHistory();
   }
 
@@ -641,6 +694,7 @@ export class BurhanPoseEditor {
     const bounds = new THREE.Box3().setFromObject(this.character);
     if (Number.isFinite(bounds.min.y)) this.character.position.y -= bounds.min.y;
     this.emitAvatarHeight();
+    this.invalidate();
     if (record) this.commitHistory();
   }
 
@@ -662,9 +716,11 @@ export class BurhanPoseEditor {
       this.camera.position.copy(targetPosition);
       this.orbit.target.copy(targetLook);
       this.orbit.update();
+      this.invalidate();
       return;
     }
     this.cameraTransition = { start:performance.now(), duration:420, from:this.camera.position.clone(), to:targetPosition, lookFrom:this.orbit.target.clone(), lookTo:targetLook };
+    this.invalidate();
   }
 
   frameCharacter() {
@@ -680,6 +736,7 @@ export class BurhanPoseEditor {
         to:sphere.center.clone().add(direction.multiplyScalar(10)),
         lookFrom:this.orbit.target.clone(), lookTo:sphere.center.clone(),
       };
+      this.invalidate();
       return;
     }
     const fov = this.perspectiveCamera.fov * DEG;
@@ -689,6 +746,7 @@ export class BurhanPoseEditor {
       to:sphere.center.clone().add(direction.multiplyScalar(distance)),
       lookFrom:this.orbit.target.clone(), lookTo:sphere.center.clone(),
     };
+    this.invalidate();
   }
 
   async exportPng(requestedResolution = 2048) {
@@ -811,11 +869,12 @@ export class BurhanPoseEditor {
     this.perspectiveCamera.aspect = aspect;
     this.perspectiveCamera.updateProjectionMatrix();
     this.updateOrthographicProjection(aspect);
+    this.invalidate();
   }
 
   setRenderingPaused(paused) {
     this.renderingPaused = Boolean(paused);
-    if (!this.renderingPaused && !this.exporting) this.renderer.render(this.scene, this.camera);
+    if (!this.renderingPaused && !this.exporting) this.invalidate();
   }
 
   updateOrthographicProjection(aspect = this.container.clientWidth / Math.max(this.container.clientHeight, 1)) {
@@ -827,9 +886,21 @@ export class BurhanPoseEditor {
     this.orthographicCamera.updateProjectionMatrix();
   }
 
+  invalidate = () => {
+    this.needsRender = true;
+    if (!this.animationFrame && !this.renderingPaused && !document.hidden) {
+      this.animationFrame = requestAnimationFrame(this.animate);
+    }
+  };
+
+  onVisibilityChange = () => {
+    if (!document.hidden) this.invalidate();
+  };
+
   animate = (time = performance.now()) => {
-    requestAnimationFrame(this.animate);
+    this.animationFrame = null;
     if (this.renderingPaused || document.hidden) return;
+    let transitioning = false;
     if (this.cameraTransition) {
       const transition = this.cameraTransition;
       const t = Math.min((time - transition.start) / transition.duration, 1);
@@ -837,13 +908,16 @@ export class BurhanPoseEditor {
       this.camera.position.lerpVectors(transition.from, transition.to, eased);
       this.orbit.target.lerpVectors(transition.lookFrom, transition.lookTo, eased);
       if (t >= 1) this.cameraTransition = null;
+      else transitioning = true;
     }
-    this.orbit.update();
-    if (!this.exporting) this.renderer.render(this.scene, this.camera);
+    const controlsChanged = this.orbit.update();
+    if (!this.exporting && (this.needsRender || controlsChanged || transitioning)) this.renderer.render(this.scene, this.camera);
+    this.needsRender = false;
     if (!this.lastStats || time - this.lastStats > 1000) {
       this.lastStats = time;
       this.callbacks.onStats?.({ drawCalls:this.renderer.info.render.calls, triangles:this.renderer.info.render.triangles });
     }
+    if ((transitioning || controlsChanged) && !this.animationFrame) this.animationFrame = requestAnimationFrame(this.animate);
   };
 }
 
@@ -1042,7 +1116,7 @@ function loadImage(url) {
 }
 
 async function verifyTransparentCorners(blob) {
-  const bitmap = await createImageBitmap(blob);
+  const bitmap = await loadImage(URL.createObjectURL(blob));
   const canvas = document.createElement("canvas");
   canvas.width = canvas.height = 2;
   const context = canvas.getContext("2d", { willReadFrequently: true });
@@ -1052,7 +1126,6 @@ async function verifyTransparentCorners(blob) {
   context.drawImage(bitmap, maxX, 0, 1, 1, 1, 0, 1, 1);
   context.drawImage(bitmap, 0, maxY, 1, 1, 0, 1, 1, 1);
   context.drawImage(bitmap, maxX, maxY, 1, 1, 1, 1, 1, 1);
-  bitmap.close();
   const pixels = context.getImageData(0, 0, 2, 2).data;
   return [3, 7, 11, 15].every((index) => pixels[index] === 0);
 }
